@@ -2,8 +2,10 @@ package com.contacts.service;
 
 import com.contacts.dto.ContactGroupRequest;
 import com.contacts.dto.ContactGroupResponse;
+import com.contacts.dto.PaginatedResponse;
 import com.contacts.entity.ContactGroup;
 import com.contacts.repository.ContactGroupRepository;
+import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -43,9 +45,18 @@ public class ContactGroupService {
         return contactGroupResponse;
     }
 
-    public List<ContactGroupResponse> getAllContactGroups(){
+    public PaginatedResponse<ContactGroupResponse> getAllContactGroups(int page, int size, String name){
+        PanacheQuery<ContactGroup> query;
+        if (name == null) {
+            query = contactGroupRepository.findAll();
+        } else {
+            query = contactGroupRepository.findByName(name);
+        }
+        List<ContactGroup> contactGroupsList = query.page(page, size).list();
+        long totalElements = query.count();
+        int totalPages = (int) Math.ceil((double) totalElements / size);
+
         List<ContactGroupResponse> contactGroupResponseList=new ArrayList<ContactGroupResponse>();
-        List<ContactGroup> contactGroupsList = contactGroupRepository.findAll().list();
         for(ContactGroup contactGroup: contactGroupsList){
             ContactGroupResponse contactGroupResponse= new ContactGroupResponse();
             contactGroupResponse.setId(contactGroup.getId());
@@ -55,7 +66,14 @@ public class ContactGroupService {
             contactGroupResponseList.add(contactGroupResponse);
         }
 
-        return contactGroupResponseList;
+        PaginatedResponse<ContactGroupResponse> response=new PaginatedResponse<>();
+        response.setContent(contactGroupResponseList);
+        response.setPage(page);
+        response.setSize(size);
+        response.setTotalElements(totalElements);
+        response.setTotalPages(totalPages);
+
+        return response;
     }
 
     @Transactional

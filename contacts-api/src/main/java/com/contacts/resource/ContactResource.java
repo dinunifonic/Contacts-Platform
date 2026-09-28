@@ -2,6 +2,7 @@ package com.contacts.resource;
 
 import com.contacts.dto.ContactRequest;
 import com.contacts.dto.ContactResponse;
+import com.contacts.dto.PaginatedResponse;
 import com.contacts.service.ContactService;
 import jakarta.ws.rs.*;
 import jakarta.inject.Inject;
@@ -15,6 +16,9 @@ import java.util.List;
 public class ContactResource {
     @Inject
     ContactService contactService;
+
+    @Inject
+    PaginationValidator paginationValidator;
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -32,8 +36,11 @@ public class ContactResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public List<ContactResponse> getAllContacts(){
-        return contactService.getAllContacts();
+    public PaginatedResponse<ContactResponse> getAllContacts(@QueryParam("page") @DefaultValue("0") int page,
+                                                             @QueryParam("size") @DefaultValue("20") int size,
+                                                             @QueryParam("groupId") Long groupId){
+        paginationValidator.validate(page, size);
+        return contactService.getAllContacts(page, size, groupId);
     }
 
     @PUT
@@ -49,7 +56,6 @@ public class ContactResource {
     public void deleteContact(@PathParam("id") Long id){
         contactService.deleteContact(id);
     }
-
 
 
 

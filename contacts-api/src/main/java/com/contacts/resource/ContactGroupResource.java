@@ -3,6 +3,7 @@ package com.contacts.resource;
 import com.contacts.dto.ContactGroupRequest;
 import com.contacts.dto.ContactGroupResponse;
 import com.contacts.dto.ContactResponse;
+import com.contacts.dto.PaginatedResponse;
 import com.contacts.service.ContactGroupService;
 import com.contacts.service.ContactService;
 import jakarta.inject.Inject;
@@ -10,7 +11,6 @@ import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 
-import java.util.List;
 
 @Path("/api/v1/groups")
 public class ContactGroupResource {
@@ -20,11 +20,17 @@ public class ContactGroupResource {
     @Inject
     ContactGroupService contactGroupService;
 
+    @Inject
+    PaginationValidator paginationValidator;
+
     @GET
     @Path("/{groupId}/contacts")
     @Produces(MediaType.APPLICATION_JSON)
-    public List<ContactResponse> getContactsByGroupId(@PathParam("groupId") Long groupId){
-        return contactService.getContactsByGroup(groupId);
+    public PaginatedResponse<ContactResponse> getContactsByGroupId(@QueryParam("page")@DefaultValue("0") int page,
+                                                                   @QueryParam("size")@DefaultValue("20") int size,
+                                                                   @PathParam("groupId") Long groupId){
+        paginationValidator.validate(page, size);
+        return contactService.getContactsByGroup(page, size, groupId);
     }
 
     @POST
@@ -43,8 +49,11 @@ public class ContactGroupResource {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public List<ContactGroupResponse> getAllContactGroups(){
-        return contactGroupService.getAllContactGroups();
+    public PaginatedResponse<ContactGroupResponse> getAllContactGroups(@QueryParam("page") @DefaultValue("0") int page,
+                                                                       @QueryParam("size") @DefaultValue("20") int size,
+                                                                       @QueryParam("name") String name){
+        paginationValidator.validate(page, size);
+        return contactGroupService.getAllContactGroups(page, size, name);
     }
 
     @PUT
