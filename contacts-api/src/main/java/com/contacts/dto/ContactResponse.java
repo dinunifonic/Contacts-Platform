@@ -1,5 +1,7 @@
 package com.contacts.dto;
 
+import java.time.LocalDateTime;
+
 public class ContactResponse {
     Long id;
     String firstName;
@@ -7,6 +9,7 @@ public class ContactResponse {
     String email;
     String phone;
     Long groupId;
+    private LocalDateTime createdTimestamp;
 
     public Long getId() {
         return id;
@@ -48,5 +51,12 @@ public class ContactResponse {
     }
     public void setGroupId(Long groupId) {
         this.groupId = groupId;
+    }
+
+    public LocalDateTime getCreatedTimestamp() {
+        return createdTimestamp;
+    }
+    public void setCreatedTimestamp(LocalDateTime createdTimestamp) {
+        this.createdTimestamp = createdTimestamp;
     }
 }

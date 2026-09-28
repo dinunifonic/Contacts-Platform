@@ -28,8 +28,7 @@ public class Contact extends PanacheEntity {
     @NotBlank
     String phone;
 
-    @NotNull
-    @ManyToOne(optional = false)
+    @ManyToOne
     ContactGroup contactGroup;
 
     @CreationTimestamp

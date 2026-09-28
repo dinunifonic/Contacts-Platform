@@ -16,7 +16,7 @@ public class ContactResource {
     @Inject
     ContactService contactService;
 
-    @POST()
+    @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public ContactResponse createContact(@Valid ContactRequest contactRequest){
@@ -36,19 +36,18 @@ public class ContactResource {
         return contactService.getAllContacts();
     }
 
-    @DELETE
-    @Path("/{id}")
-    public String deleteContact(@PathParam("id") Long id){
-        contactService.deleteContact(id);
-        return "Contact Deleted Successfully!";
-    }
-
     @PUT
     @Path("/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public ContactResponse updateContact(@PathParam("id") Long id, @Valid ContactRequest contactRequest){
         return contactService.updateContact(id, contactRequest);
+    }
+
+    @DELETE
+    @Path("/{id}")
+    public void deleteContact(@PathParam("id") Long id){
+        contactService.deleteContact(id);
     }
 
 
