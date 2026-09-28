@@ -2,7 +2,6 @@ package com.contacts.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 public class ContactRequest {
     @NotBlank
@@ -14,7 +13,6 @@ public class ContactRequest {
     String email;
     @NotBlank
     String phone;
-    @NotNull
     Long groupId;
 
 

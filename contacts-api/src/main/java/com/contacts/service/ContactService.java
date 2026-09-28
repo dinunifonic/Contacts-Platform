@@ -23,8 +23,9 @@ public class ContactService {
 
     @Transactional
     public ContactResponse createContact(ContactRequest contactRequest){
-        ContactGroup contactGroup = contactGroupRepository.findById(contactRequest.getGroupId());
-
+        ContactGroup contactGroup= null;
+        if (contactRequest.getGroupId()!=null)
+            contactGroup= contactGroupRepository.findById(contactRequest.getGroupId());
         Contact contact= new Contact();
         contact.setFirstName(contactRequest.getFirstName());
         contact.setLastName(contactRequest.getLastName());
@@ -39,7 +40,8 @@ public class ContactService {
         contactResponse.setLastName(contact.getLastName());
         contactResponse.setEmail(contact.getEmail());
         contactResponse.setPhone(contact.getPhone());
-        contactResponse.setGroupId(contactGroup.getId());
+        contactResponse.setGroupId((contactGroup != null ? contactGroup.getId() : null));
+        contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
 
         return contactResponse;
     }
@@ -52,7 +54,8 @@ public class ContactService {
         contactResponse.setLastName(contact.getLastName());
         contactResponse.setEmail(contact.getEmail());
         contactResponse.setPhone(contact.getPhone());
-        contactResponse.setGroupId(contact.getContactGroup().getId());
+        contactResponse.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
+        contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
 
         return contactResponse;
     }
@@ -67,17 +70,12 @@ public class ContactService {
             contactResponse.setLastName(contact.getLastName());
             contactResponse.setEmail(contact.getEmail());
             contactResponse.setPhone(contact.getPhone());
-            contactResponse.setGroupId(contact.getContactGroup().getId());
+            contactResponse.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
+            contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
             contactResponseList.add(contactResponse);
         }
 
         return contactResponseList;
-    }
-
-    @Transactional
-    public void deleteContact(Long id){
-        Contact contact= contactRepository.findById(id);
-        contactRepository.delete(contact);
     }
 
     @Transactional
@@ -87,7 +85,10 @@ public class ContactService {
         contact.setLastName(contactRequest.getLastName());
         contact.setEmail(contactRequest.getEmail());
         contact.setPhone(contactRequest.getPhone());
-        contact.setContactGroup(contactGroupRepository.findById(contactRequest.getGroupId()));
+        ContactGroup contactGroup=null;
+        if (contactRequest.getGroupId()!=null)
+            contactGroup= contactGroupRepository.findById(contactRequest.getGroupId());
+        contact.setContactGroup(contactGroup);
 
         ContactResponse contactResponse=new ContactResponse();
         contactResponse.setId(contact.getId());
@@ -95,9 +96,16 @@ public class ContactService {
         contactResponse.setLastName(contact.getLastName());
         contactResponse.setEmail(contact.getEmail());
         contactResponse.setPhone(contact.getPhone());
-        contactResponse.setGroupId(contact.getContactGroup().getId());
+        contactResponse.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
+        contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
 
         return contactResponse;
+    }
+
+    @Transactional
+    public void deleteContact(Long id){
+        Contact contact= contactRepository.findById(id);
+        contactRepository.delete(contact);
     }
 
     public List<ContactResponse> getContactsByGroup(Long groupId){
@@ -110,7 +118,8 @@ public class ContactService {
             contactResponse.setLastName(contact.getLastName());
             contactResponse.setEmail(contact.getEmail());
             contactResponse.setPhone(contact.getPhone());
-            contactResponse.setGroupId(contact.getContactGroup().getId());
+            contactResponse.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
+            contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
             contactResponseList.add(contactResponse);
         }
         return contactResponseList;
