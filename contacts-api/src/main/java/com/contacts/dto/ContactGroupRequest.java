@@ -1,10 +1,14 @@
 package com.contacts.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 
+@Schema(description = "Request body used to create or update a contact group")
 public class ContactGroupRequest {
+    @Schema(description = "Unique name of the contact group", example = "Friends")
     @NotBlank
     String name;
+    @Schema(description = "Description of the contact group", example = "These are my friends")
     String description;
 
     public String getName() {

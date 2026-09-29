@@ -1,11 +1,17 @@
 package com.contacts.dto;
 
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import java.time.LocalDateTime;
 
+@Schema(description = "Response containing contact group information")
 public class ContactGroupResponse {
+    @Schema(description = "Unique identifier of the contact group", example = "1")
     Long id;
+    @Schema(description = "Unique name of the contact group", example = "Friends")
     String name;
+    @Schema(description = "Description of the contact group", example = "These are my friends")
     String description;
+    @Schema(description = "Timestamp when the contact group was created", example = "2026-09-28T14:30:00")
     private LocalDateTime createdTimestamp;
 
     public Long getId() {

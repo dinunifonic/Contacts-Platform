@@ -4,6 +4,7 @@ import com.contacts.dto.ContactGroupRequest;
 import com.contacts.dto.ContactGroupResponse;
 import com.contacts.dto.PaginatedResponse;
 import com.contacts.entity.ContactGroup;
+import com.contacts.exception.NotFoundException;
 import com.contacts.repository.ContactGroupRepository;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -36,6 +37,10 @@ public class ContactGroupService {
 
     public ContactGroupResponse getContactGroupById(Long id){
         ContactGroup contactGroup= contactGroupRepository.findById(id);
+        if (contactGroup == null) {
+            throw new NotFoundException("Group with id:" + id + " not found");
+        }
+
         ContactGroupResponse contactGroupResponse=new ContactGroupResponse();
         contactGroupResponse.setId(contactGroup.getId());
         contactGroupResponse.setName(contactGroup.getName());
@@ -79,6 +84,9 @@ public class ContactGroupService {
     @Transactional
     public ContactGroupResponse updateContactGroup(Long id, ContactGroupRequest contactGroupRequest){
         ContactGroup contactGroup= contactGroupRepository.findById(id);
+        if (contactGroup == null) {
+            throw new NotFoundException("Group with id:" + id + " not found");
+        }
         contactGroup.setName(contactGroupRequest.getName());
         contactGroup.setDescription(contactGroupRequest.getDescription());
 
@@ -94,6 +102,10 @@ public class ContactGroupService {
     @Transactional
     public void deleteContactGroup(Long id){
         ContactGroup contactGroup= contactGroupRepository.findById(id);
+        if (contactGroup == null) {
+            throw new NotFoundException("Group with id:" + id + " not found");
+        }
+
         contactGroupRepository.delete(contactGroup);
     }
 }

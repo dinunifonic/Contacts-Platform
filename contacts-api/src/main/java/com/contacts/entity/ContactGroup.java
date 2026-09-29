@@ -14,18 +14,16 @@ import java.util.List;
 public class ContactGroup extends PanacheEntity {
     @NotBlank
     @Column(unique = true)
-    String name;
-    String description;
+    private String name;
+    private String description;
 
     @OneToMany(mappedBy = "contactGroup")
-    List<Contact> contactsList;
+    private List<Contact> contactsList;
 
     @CreationTimestamp
-    LocalDateTime createdTimestamp;
+    private LocalDateTime createdTimestamp;
 
-    public Long getId(){
-        return id;
-    }
+    public Long getId(){ return id; }
     public void setId(Long id){
         this.id = id;
     }
