@@ -15,24 +15,24 @@ import java.time.LocalDateTime;
 @Entity
 public class Contact extends PanacheEntity {
     @NotBlank
-    String firstName;
+    private String firstName;
 
     @NotBlank
-    String lastName;
+    private String lastName;
 
     @NotBlank
     @Email
     @Column(unique = true)
-    String email;
+    private String email;
 
     @NotBlank
-    String phone;
+    private String phone;
 
     @ManyToOne
-    ContactGroup contactGroup;
+    private ContactGroup contactGroup;
 
     @CreationTimestamp
-    LocalDateTime createdTimestamp;
+    private LocalDateTime createdTimestamp;
 
     public Long getId(){
         return id;

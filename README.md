@@ -78,26 +78,105 @@ Versioning is included in the URL so that future API versions can be introduced 
 
 ### Contacts
 
-| Method | Endpoint                | Description         |
-| ------ | ----------------------- | ------------------- |
-| POST   | `/api/v1/contacts`      | Create a contact    |
-| GET    | `/api/v1/contacts`      | Get all contacts    |
-| GET    | `/api/v1/contacts/{id}` | Get a contact by ID |
-| PUT    | `/api/v1/contacts/{id}` | Update a contact    |
-| DELETE | `/api/v1/contacts/{id}` | Delete a contact    |
+| Method | Endpoint                | Description                                                |
+| ------ | ----------------------- | ---------------------------------------------------------- |
+| POST   | `/api/v1/contacts`      | Create a contact                                           |
+| GET    | `/api/v1/contacts`      | Get contacts, with pagination and optional group filtering |
+| GET    | `/api/v1/contacts/{id}` | Get a contact by ID                                        |
+| PUT    | `/api/v1/contacts/{id}` | Update a contact                                           |
+| DELETE | `/api/v1/contacts/{id}` | Delete a contact                                           |
 
 ### Contact Groups
 
-| Method | Endpoint                            | Description                       |
-| ------ | ----------------------------------- | --------------------------------- |
-| POST   | `/api/v1/groups`                    | Create a contact group            |
-| GET    | `/api/v1/groups`                    | Get all contact groups            |
-| GET    | `/api/v1/groups/{groupId}`          | Get a contact group by ID         |
-| PUT    | `/api/v1/groups/{groupId}`          | Update a contact group            |
-| DELETE | `/api/v1/groups/{groupId}`          | Delete a contact group            |
-| GET    | `/api/v1/groups/{groupId}/contacts` | Get contacts belonging to a group |
+| Method | Endpoint                            | Description                                                     |
+| ------ | ----------------------------------- | --------------------------------------------------------------- |
+| POST   | `/api/v1/groups`                    | Create a contact group                                          |
+| GET    | `/api/v1/groups`                    | Get contact groups, with pagination and optional name filtering |
+| GET    | `/api/v1/groups/{groupId}`          | Get a contact group by ID                                       |
+| PUT    | `/api/v1/groups/{groupId}`          | Update a contact group                                          |
+| DELETE | `/api/v1/groups/{groupId}`          | Delete a contact group                                          |
+| GET    | `/api/v1/groups/{groupId}/contacts` | Get paginated contacts belonging to a group                     |
 
-Pagination and filtering for list endpoints will be defined as part of the API contract work in D2.
+## API Standards
+
+### HTTP Methods and Status Codes
+
+The API uses standard HTTP methods according to the operation being performed.
+
+| Operation         | Method | Success Status   |
+| ----------------- | ------ | ---------------- |
+| Create resource   | POST   | `201 Created`    |
+| Retrieve resource | GET    | `200 OK`         |
+| Update resource   | PUT    | `200 OK`         |
+| Delete resource   | DELETE | `204 No Content` |
+
+POST requests return `201 Created` and include a `Location` header pointing to the newly created resource.
+
+PUT requests return `200 OK` together with the updated resource representation.
+
+DELETE requests return `204 No Content` because the resource has been successfully deleted and no response body is returned.
+
+### Pagination
+
+List endpoints support pagination using the following query parameters:
+
+* `page` — zero-based page number, default `0`
+* `size` — number of resources per page, default `20`
+* Maximum `size` — `100`
+
+Example:
+
+```text
+GET /api/v1/contacts?page=0&size=20
+```
+
+Invalid pagination values return `400 Bad Request`.
+
+Paginated responses use the following structure:
+
+```json
+{
+  "content": [],
+  "page": 0,
+  "size": 20,
+  "totalElements": 0,
+  "totalPages": 0
+}
+```
+
+### Filtering
+
+Contacts can be filtered by contact group ID:
+
+```text
+GET /api/v1/contacts?groupId=1
+```
+
+Contact groups can be filtered by exact name:
+
+```text
+GET /api/v1/groups?name=Friends
+```
+
+Filtering is performed on collection endpoints. If no resources match a filter, the API returns `200 OK` with an empty `content` list.
+
+### Nested Group Contacts
+
+Contacts belonging to a specific group can be retrieved using:
+
+```text
+GET /api/v1/groups/{groupId}/contacts
+```
+
+This endpoint supports the same pagination parameters:
+
+```text
+GET /api/v1/groups/1/contacts?page=0&size=20
+```
+
+If the group does not exist, the API returns `404 Not Found`.
+
+If the group exists but contains no contacts, the API returns `200 OK` with an empty paginated response.
 
 ## Validation
 
@@ -112,7 +191,50 @@ For example:
 
 Validation is triggered at the REST resource layer using `@Valid`.
 
-Invalid request payloads are therefore rejected before they reach the service layer.
+Invalid request payloads return `400 Bad Request`.
+
+## Error Handling
+
+The API uses a single exception mapper to provide a consistent error response format.
+
+Errors use the media type:
+
+```text
+application/problem+json
+```
+
+The error response follows the RFC 9457 Problem Details structure:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Validation Failed",
+  "status": 400,
+  "detail": "firstName: must not be blank",
+  "instance": "/api/v1/contacts"
+}
+```
+
+The response contains:
+
+* `type`
+* `title`
+* `status`
+* `detail`
+* `instance`
+
+The main error cases are:
+
+| Situation                            | Status                      |
+| ------------------------------------ | --------------------------- |
+| Invalid request / validation failure | `400 Bad Request`           |
+| Resource not found                   | `404 Not Found`             |
+| Duplicate unique value               | `409 Conflict`              |
+| Unexpected server error              | `500 Internal Server Error` |
+
+A duplicate email or group name is returned as `409 Conflict`.
+
+Raw database constraint error messages are not exposed to API clients.
 
 ## Data Model
 
@@ -151,6 +273,29 @@ Group membership is managed through the Contact API rather than by sending a lis
 
 If a contact has no group, its `groupId` is returned as `null`.
 
+## OpenAPI / Swagger
+
+The API is documented using MicroProfile OpenAPI annotations.
+
+The OpenAPI documentation includes:
+
+* Endpoint operations and descriptions
+* HTTP response codes
+* Request schemas
+* Response schemas
+* Path parameters
+* Query parameters
+* DTO field descriptions
+* Example values
+
+Swagger UI is available at:
+
+```text
+http://localhost:8080/q/swagger-ui
+```
+
+Swagger UI can be used to explore and test the API without needing to know the implementation details.
+
 ## How to Run
 
 ### Prerequisites
@@ -183,18 +328,6 @@ http://localhost:8080
 
 Quarkus development mode provides live reload, so changes to the application can be tested without manually restarting the application.
 
-## Swagger UI
-
-The API is documented using OpenAPI.
-
-When the application is running, Swagger UI is available at:
-
-```text
-http://localhost:8080/q/swagger-ui
-```
-
-Swagger UI can be used to explore and test the available endpoints without needing to know the implementation details of the application.
-
 ## Testing the API
 
 The API can be tested through Swagger UI.
@@ -207,10 +340,13 @@ Example workflow:
 4. Create a contact using `POST /api/v1/contacts`.
 5. Provide the group's ID as `groupId` if the contact should belong to that group.
 6. Retrieve contacts or groups using the corresponding `GET` endpoints.
-7. Update resources using the `PUT` endpoints.
-8. Delete resources using the `DELETE` endpoints.
+7. Test pagination using `page` and `size`.
+8. Test filtering using `groupId` or `name`.
+9. Update resources using the `PUT` endpoints.
+10. Delete resources using the `DELETE` endpoints.
+11. Test validation and error responses using invalid requests.
 
-The CRUD endpoints were manually tested through Swagger UI during development.
+The CRUD, pagination, filtering, validation, status codes, and error handling were manually tested through Swagger UI during development.
 
 ## Configuration
 
@@ -226,13 +362,7 @@ app.message=Contacts API
 
 This provides a development/production configuration difference without changing the application code.
 
-Automatic Hibernate schema generation is disabled:
-
-```properties
-quarkus.hibernate-orm.schema-management.strategy=none
-```
-
-Database schema creation and changes will be managed through migrations.
+Database schema management is intended to be handled through migration scripts rather than being generated from the entity classes.
 
 ## Design Decisions
 
@@ -276,6 +406,23 @@ The API uses `/api/v1` for its current endpoints.
 
 This makes the API version explicit and allows future versions to be introduced without changing the existing API contract.
 
+### Resource Naming
+
+Collection resources use plural names:
+
+```text
+/api/v1/contacts
+/api/v1/groups
+```
+
+The nested group endpoint:
+
+```text
+/api/v1/groups/{groupId}/contacts
+```
+
+represents the relationship between a group and the contacts belonging to it.
+
 ### Group Membership
 
 `ContactGroupRequest` does not contain a list of contact IDs.
@@ -284,32 +431,41 @@ Instead, the relationship is managed from the Contact side using `groupId`.
 
 This keeps the relationship consistent with the `Contact` entity, which contains the reference to its `ContactGroup`.
 
-### Database Schema Management
+### Pagination
 
-Automatic Hibernate schema generation is disabled.
+Pagination uses zero-based page numbering.
 
-The database schema will be created and modified through migration scripts rather than being automatically generated from the entity classes.
+The default page size is `20`, with a maximum of `100`.
+
+A common `PaginatedResponse<T>` structure is used so that contacts and groups return pagination information in the same format.
+
+### Filtering
+
+Contacts are filtered using `groupId`, while groups are filtered using their exact `name`.
+
+Collection filters return an empty result rather than `404` when no resources match.
+
+A `404` is reserved for requests targeting a specific resource that does not exist, such as:
+
+```text
+GET /api/v1/groups/999
+```
+
+### Error Handling
+
+A single exception mapper is used to provide a consistent `application/problem+json` response format.
+
+This keeps error responses consistent across the API instead of returning different error structures for different exceptions.
 
 ### OpenAPI / Swagger
 
 OpenAPI documentation is used so that the API contract can be explored independently of the implementation.
 
-Swagger UI provides an interactive way to understand and test the available endpoints.
+Swagger UI provides an interactive way to understand and test the available endpoints, including their parameters, request bodies, response schemas, and status codes.
 
-## Known Decisions for Later API Design
+### Database Schema Management
 
-Some API contract decisions are intentionally left for the next stage of development.
-
-In particular:
-
-* Pagination format for list endpoints
-* Filtering parameters
-* List response structure
-* Standard HTTP status codes for all API operations
-* Unified machine-readable error response
-* Centralized error handling
-
-These will be finalized according to the API standards defined for D2.
+Database schema creation and changes will be managed through migration scripts rather than being automatically generated from entity classes.
 
 ## API Contract
 
