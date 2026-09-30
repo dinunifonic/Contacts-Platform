@@ -7,9 +7,9 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 public class ContactGroupRequest {
     @Schema(description = "Unique name of the contact group", example = "Friends")
     @NotBlank
-    String name;
+    private String name;
     @Schema(description = "Description of the contact group", example = "These are my friends")
-    String description;
+    private String description;
 
     public String getName() {
         return name;

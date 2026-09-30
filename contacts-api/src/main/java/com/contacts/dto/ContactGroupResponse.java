@@ -6,11 +6,11 @@ import java.time.LocalDateTime;
 @Schema(description = "Response containing contact group information")
 public class ContactGroupResponse {
     @Schema(description = "Unique identifier of the contact group", example = "1")
-    Long id;
+    private Long id;
     @Schema(description = "Unique name of the contact group", example = "Friends")
-    String name;
+    private String name;
     @Schema(description = "Description of the contact group", example = "These are my friends")
-    String description;
+    private String description;
     @Schema(description = "Timestamp when the contact group was created", example = "2026-09-28T14:30:00")
     private LocalDateTime createdTimestamp;
 

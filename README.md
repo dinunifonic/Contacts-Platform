@@ -22,12 +22,13 @@ The `contacts-api` module contains the main REST API. The `contacts-reporter` mo
 * Java 21
 * Quarkus 3.39.5
 * Maven
-* RESTEasy Reactive / Jakarta REST
+* Jakarta REST / Quarkus REST
 * Hibernate ORM with Panache
 * Jakarta Bean Validation
 * MySQL
+* Flyway
+* Quarkus Dev Services
 * OpenAPI / Swagger UI
-* Flyway migrations
 
 ## Architecture
 
@@ -37,6 +38,8 @@ The `contacts-api` follows a layered architecture:
 HTTP Request
      ↓
 Resource
+     ↓
+DTO
      ↓
 Service
      ↓
@@ -49,11 +52,11 @@ Database
 
 The layers have separate responsibilities:
 
-* **Resource** — handles HTTP requests and responses.
-* **Service** — contains application and business logic.
-* **Repository** — handles persistence and database operations.
-* **Entity** — represents the persistence model.
-* **DTO** — represents the data exchanged through the API.
+* **Resource** - handles HTTP requests and responses.
+* **DTO** - represents data exchanged through the API.
+* **Service** - contains application and business logic.
+* **Repository** - handles persistence and database operations.
+* **Entity** - represents the persistence model.
 
 Resources do not access repositories directly, and persistence entities are not exposed directly through the REST API.
 
@@ -120,9 +123,9 @@ DELETE requests return `204 No Content` because the resource has been successful
 
 List endpoints support pagination using the following query parameters:
 
-* `page` — zero-based page number, default `0`
-* `size` — number of resources per page, default `20`
-* Maximum `size` — `100`
+* `page` --> zero-based page number, default `0`
+* `size` --> number of resources per page, default `20`
+* Maximum `size` = `100`
 
 Example:
 
@@ -263,7 +266,7 @@ A ContactGroup contains:
 
 Group names are unique.
 
-### Contact–ContactGroup Relationship
+### Contact-to-ContactGroup Relationship
 
 A Contact can optionally belong to a ContactGroup.
 
@@ -272,6 +275,112 @@ A contact does not have to belong to a group, so `groupId` is optional when crea
 Group membership is managed through the Contact API rather than by sending a list of contact IDs when creating or updating a group.
 
 If a contact has no group, its `groupId` is returned as `null`.
+
+The relationship is represented as:
+
+```text
+ContactGroup
+     1
+     |
+     | contains
+     |
+     *
+  Contact
+```
+
+The `Contact` entity owns the relationship through its `contactGroup` field. The `ContactGroup` entity uses `mappedBy = "contactGroup"` for the inverse side.
+
+## Persistence
+
+### Hibernate ORM and Panache
+
+Hibernate ORM with Panache is used for object-relational mapping and persistence.
+
+Entities are mapped to database tables, while Panache repositories provide the database access layer.
+
+The application uses repositories rather than exposing persistence operations directly from the REST resources.
+
+### Database Migrations
+
+Flyway is used to manage the database schema.
+
+The initial schema is created by:
+
+```text
+contacts-api/src/main/resources/db/migration/V1__create_contacts_schema.sql
+```
+
+The migration creates:
+
+* `contact_group`
+* `contact`
+* Primary keys
+* Unique constraints for group names and contact emails
+* The foreign key between contacts and contact groups
+
+The `contact_group` table is created before the `contact` table because the contact table contains a foreign key referencing the group table.
+
+### Migration-Only Schema Management
+
+Hibernate schema generation is disabled:
+
+```properties
+quarkus.hibernate-orm.schema-management.strategy=none
+```
+
+This means Hibernate does not create or modify database tables at runtime.
+
+Flyway is responsible for creating and updating the database schema.
+
+This was chosen so that database structure is explicitly version-controlled through migration scripts rather than being implicitly generated from entity classes.
+
+### ID Generation
+
+The entities use explicitly defined IDs:
+
+```java
+@Id
+@GeneratedValue(strategy = GenerationType.IDENTITY)
+private Long id;
+```
+
+The database columns use MySQL `AUTO_INCREMENT`.
+
+This keeps the Hibernate ID generation strategy consistent with the database schema managed by Flyway.
+
+### Transactions
+
+Database-changing operations are executed within transactions using `@Transactional` in the service layer.
+
+This keeps transaction management outside the REST resource layer and ensures that persistence operations are handled as part of the application's business logic.
+
+### Dev Services
+
+Quarkus Dev Services is used to provide a MySQL database automatically during development and testing.
+
+No fixed database URL, username, or password is required for the development database.
+
+When the application starts in development mode, Quarkus starts a MySQL container automatically through Docker.
+
+The development database is then initialized by Flyway.
+
+The resulting startup flow is:
+
+```text
+Quarkus starts
+      ↓
+Dev Services starts MySQL
+      ↓
+Flyway validates migrations
+      ↓
+Flyway applies pending migrations
+      ↓
+Hibernate connects to the existing schema
+      ↓
+Application starts
+```
+
+This allows the application to use a reproducible database environment without requiring a manually configured local MySQL server.
 
 ## OpenAPI / Swagger
 
@@ -328,6 +437,10 @@ http://localhost:8080
 
 Quarkus development mode provides live reload, so changes to the application can be tested without manually restarting the application.
 
+When running in development mode, Quarkus Dev Services automatically starts the MySQL database when Docker is available.
+
+Flyway then applies the database migrations before the application starts.
+
 ## Testing the API
 
 The API can be tested through Swagger UI.
@@ -337,16 +450,18 @@ Example workflow:
 1. Start the application.
 2. Open Swagger UI.
 3. Create a contact group using `POST /api/v1/groups`.
-4. Create a contact using `POST /api/v1/contacts`.
-5. Provide the group's ID as `groupId` if the contact should belong to that group.
-6. Retrieve contacts or groups using the corresponding `GET` endpoints.
-7. Test pagination using `page` and `size`.
-8. Test filtering using `groupId` or `name`.
-9. Update resources using the `PUT` endpoints.
-10. Delete resources using the `DELETE` endpoints.
-11. Test validation and error responses using invalid requests.
+4. Retrieve the group using `GET /api/v1/groups/{id}`.
+5. Create a contact using `POST /api/v1/contacts`.
+6. Provide the group's ID as `groupId` if the contact should belong to that group.
+7. Retrieve contacts or groups using the corresponding `GET` endpoints.
+8. Retrieve the contacts of a group using `GET /api/v1/groups/{groupId}/contacts`.
+9. Test pagination using `page` and `size`.
+10. Test filtering using `groupId` or `name`.
+11. Update resources using the `PUT` endpoints.
+12. Delete resources using the `DELETE` endpoints.
+13. Test validation and error responses using invalid requests.
 
-The CRUD, pagination, filtering, validation, status codes, and error handling were manually tested through Swagger UI during development.
+The CRUD, pagination, filtering, validation, status codes, error handling, and persistence behavior were manually tested through Swagger UI during development.
 
 ## Configuration
 
@@ -362,7 +477,25 @@ app.message=Contacts API
 
 This provides a development/production configuration difference without changing the application code.
 
-Database schema management is intended to be handled through migration scripts rather than being generated from the entity classes.
+The database configuration specifies MySQL:
+
+```properties
+quarkus.datasource.db-kind=mysql
+```
+
+Flyway runs migrations automatically when the application starts:
+
+```properties
+quarkus.flyway.migrate-at-start=true
+```
+
+Hibernate schema generation is disabled:
+
+```properties
+quarkus.hibernate-orm.schema-management.strategy=none
+```
+
+Therefore, the database schema is managed through Flyway migrations.
 
 ## Design Decisions
 
@@ -371,10 +504,10 @@ Database schema management is intended to be handled through migration scripts r
 The API uses the following structure:
 
 ```text
-Resource → Service → Repository → Entity
+Resource → DTO → Service → Repository → Entity
 ```
 
-This separates HTTP handling, business logic, and persistence responsibilities.
+This separates HTTP handling, API data transfer, business logic, and persistence responsibilities.
 
 The Resource layer does not access persistence directly, and business logic is kept out of the Resource layer.
 
@@ -465,7 +598,39 @@ Swagger UI provides an interactive way to understand and test the available endp
 
 ### Database Schema Management
 
-Database schema creation and changes will be managed through migration scripts rather than being automatically generated from entity classes.
+Database schema creation and changes are managed through Flyway migration scripts rather than being automatically generated from entity classes.
+
+Hibernate schema generation is explicitly disabled using:
+
+```properties
+quarkus.hibernate-orm.schema-management.strategy=none
+```
+
+This makes the database schema version-controlled and reproducible.
+
+### ID Generation
+
+Entity IDs use:
+
+```
+@GeneratedValue(strategy = GenerationType.IDENTITY)
+```
+
+This matches MySQL `AUTO_INCREMENT` columns and avoids relying on Hibernate-generated sequence tables.
+
+### Dev Services
+
+Quarkus Dev Services is used for the development database.
+
+This provides an automatically managed MySQL container through Docker and avoids requiring developers to manually configure a local database for development.
+
+### Persistence Relationships
+
+The `Contact` entity owns the relationship to `ContactGroup` through a `ManyToOne` association.
+
+A `ContactGroup` can therefore contain multiple contacts, while each contact can optionally reference one group.
+
+The database enforces the relationship through a foreign key.
 
 ## API Contract
 
