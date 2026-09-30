@@ -636,4 +636,4 @@ The database enforces the relationship through a foreign key.
 
 The exported OpenAPI contract is committed to the repository and represents the API contract independently of the implementation.
 
-The contract will be updated whenever the API contract changes.
+The contract is updated whenever the API contract changes.
