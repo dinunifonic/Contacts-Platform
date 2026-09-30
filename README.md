@@ -636,4 +636,19 @@ The database enforces the relationship through a foreign key.
 
 The exported OpenAPI contract is committed to the repository and represents the API contract independently of the implementation.
 
-The contract will be updated whenever the API contract changes.
+
+
+The contract is updated whenever the API contract changes.
+
+## Git Workflow
+
+We use GitHub Flow for this project.
+
+- `main` contains the stable version of the project.
+- New work is developed on a dedicated feature branch.
+- Commits should be small and focused.
+- Feature branches are pushed to GitHub and merged through pull requests.
+- Pull requests are reviewed before merging into `main`.
+- After a pull request is merged, the feature branch can be deleted.
+
+We chose GitHub Flow because this project is developed incrementally, with each major task delivered through a dedicated pull request. GitFlow was not chosen because the project does not require long-lived `develop`, release, or hotfix branches. Trunk-based development was also not chosen because the assignment specifically requires working with feature branches and pull requests.
