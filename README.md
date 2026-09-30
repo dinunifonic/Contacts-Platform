@@ -663,4 +663,4 @@ The changes were then submitted through a pull request, reviewed, confirmed to h
 
 ### Conventional Commits
 
-Earlier commits in the project were created before adopting the Conventional Commits convention, so they do not consistently use conventional prefixes. Starting with the git-workflow branch commits, new commits follow the convention where appropriate, such as `docs: document GitHub Flow strategy` and `docs: update API contract wording`.
+Earlier commits in the project were created before adopting the Conventional Commits convention, so they do not consistently use conventional prefixes. Starting with the `git-workflow` branch commits, new commits follow the convention where appropriate, such as `docs: document GitHub Flow strategy` and `docs: update API contract wording`.

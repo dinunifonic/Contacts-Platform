@@ -1,0 +1,487 @@
+openapi: 3.1.0
+components:
+  schemas:
+    ContactGroupRequest:
+      description: Request body used to create or update a contact group
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Unique name of the contact group
+          examples:
+            - Friends
+          pattern: \S
+        description:
+          type: string
+          description: Description of the contact group
+          examples:
+            - These are my friends
+    ContactGroupResponse:
+      description: Response containing contact group information
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique identifier of the contact group
+          examples:
+            - 1
+        name:
+          type: string
+          description: Unique name of the contact group
+          examples:
+            - Friends
+        description:
+          type: string
+          description: Description of the contact group
+          examples:
+            - These are my friends
+        createdTimestamp:
+          $ref: "#/components/schemas/LocalDateTime"
+          description: Timestamp when the contact group was created
+          type: string
+          examples:
+            - 2026-09-28T14:30:00
+    ContactRequest:
+      description: Request body used to create or update a contact
+      type: object
+      required:
+        - firstName
+        - lastName
+        - email
+        - phone
+      properties:
+        firstName:
+          type: string
+          description: Contact's first name
+          examples:
+            - Dina
+          pattern: \S
+        lastName:
+          type: string
+          description: Contact's last name
+          examples:
+            - Ismail
+          pattern: \S
+        email:
+          type: string
+          description: Contact's email address
+          examples:
+            - dina@unifonic.com
+          pattern: \S
+        phone:
+          type: string
+          description: Contact's phone number
+          examples:
+            - "0108357102"
+          pattern: \S
+        groupId:
+          type:
+            - integer
+            - "null"
+          format: int64
+          description: ID of the contact group
+          examples:
+            - 1
+    ContactResponse:
+      description: Response containing contact information
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique identifier of the contact
+          examples:
+            - 1
+        firstName:
+          type: string
+          description: Contact's first name
+          examples:
+            - Dina
+        lastName:
+          type: string
+          description: Contact's last name
+          examples:
+            - Ismail
+        email:
+          type: string
+          description: Contact's email address
+          examples:
+            - dina@unifonic.com
+        phone:
+          type: string
+          description: Contact's phone number
+          examples:
+            - "0108357102"
+        groupId:
+          type:
+            - integer
+            - "null"
+          format: int64
+          description: ID of the contact group
+          examples:
+            - 1
+        createdTimestamp:
+          $ref: "#/components/schemas/LocalDateTime"
+          description: Timestamp when the contact was created
+          type: string
+          examples:
+            - 2026-09-28T14:30:00
+    LocalDateTime:
+      type: string
+      format: date-time
+    PaginatedResponse:
+      description: Paginated response containing a list of resources and pagination
+        information
+      type: object
+      properties:
+        content:
+          type: array
+          items: {}
+          description: Resources returned for the current page
+        page:
+          type: integer
+          format: int32
+          description: Zero-based page number
+          examples:
+            - 0
+        size:
+          type: integer
+          format: int32
+          description: Number of resources requested per page
+          examples:
+            - 20
+        totalElements:
+          type: integer
+          format: int64
+          description: Total number of resources matching the request
+          examples:
+            - 45
+        totalPages:
+          type: integer
+          format: int32
+          description: Total number of available pages
+          examples:
+            - 3
+paths:
+  /api/v1/contacts:
+    get:
+      summary: Get all contacts
+      description: "Returns a paginated list of contacts, optionally filtered by group\
+        \ ID."
+      parameters:
+        - description: Filter contacts by contact group ID
+          example: 1
+          name: groupId
+          in: query
+          schema:
+            type: integer
+            format: int64
+        - description: Zero-based page number
+          example: 0
+          name: page
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - description: Number of contacts per page. Must be between 1 and 100
+          example: 20
+          name: size
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 20
+      responses:
+        "200":
+          description: Contacts retrieved successfully!
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+        "400":
+          description: Invalid pagination parameters
+      tags:
+        - Contact Resource
+    post:
+      summary: Create a contact
+      description: Creates a new contact.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactRequest"
+        required: true
+      responses:
+        "201":
+          description: Contact created successfully!
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactResponse"
+        "400":
+          description: Invalid request
+        "409":
+          description: A contact with the same email already exists
+      tags:
+        - Contact Resource
+  /api/v1/contacts/{id}:
+    put:
+      summary: Update a contact
+      description: Updates an existing contact by its ID.
+      parameters:
+        - description: Unique identifier of the contact
+          example: 1
+          name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactRequest"
+        required: true
+      responses:
+        "200":
+          description: Contact updated successfully!
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactResponse"
+        "400":
+          description: Invalid request
+        "404":
+          description: Contact not found :(
+        "409":
+          description: A contact with the same email already exists
+      tags:
+        - Contact Resource
+    get:
+      summary: Get a contact by ID
+      description: Returns a contact by its ID.
+      parameters:
+        - description: Unique identifier of the contact
+          example: 1
+          name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Contact found :)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactResponse"
+        "404":
+          description: Contact not found :(
+      tags:
+        - Contact Resource
+    delete:
+      summary: Delete a contact
+      description: Deletes an existing contact by its ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: Contact deleted successfully!
+        "404":
+          description: Contact not found :(
+      tags:
+        - Contact Resource
+  /api/v1/groups:
+    get:
+      summary: Get contact groups
+      description: "Returns a paginated list of contact groups, optionally filtered\
+        \ by name."
+      parameters:
+        - description: Filter groups by exact group name
+          example: Friends
+          name: name
+          in: query
+          schema:
+            type: string
+        - description: Zero-based page number
+          example: 0
+          name: page
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - description: Number of contacts per page. Must be between 1 and 100
+          example: 20
+          name: size
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 20
+      responses:
+        "200":
+          description: Contact groups retrieved successfully!
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+        "400":
+          description: Invalid pagination parameters
+      tags:
+        - Contact Group Resource
+    post:
+      summary: Create a contact group
+      description: Creates a new contact group.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactGroupRequest"
+        required: true
+      responses:
+        "201":
+          description: Contact group created successfully!
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactGroupResponse"
+        "400":
+          description: Invalid request
+        "409":
+          description: A group with the same name already exists
+      tags:
+        - Contact Group Resource
+  /api/v1/groups/{groupId}:
+    put:
+      summary: Update a contact group
+      description: Updates an existing contact group by its ID.
+      parameters:
+        - description: Unique identifier of the contact group
+          example: 1
+          name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactGroupRequest"
+        required: true
+      responses:
+        "200":
+          description: Contact group updated successfully!
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactGroupResponse"
+        "400":
+          description: Invalid request
+        "404":
+          description: Contact group not found :(
+        "409":
+          description: A group with the same name already exists
+      tags:
+        - Contact Group Resource
+    get:
+      summary: Get a group by ID
+      description: Returns a single contact group by its ID.
+      parameters:
+        - description: Unique identifier of the contact group
+          example: 1
+          name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Contact group found :)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactGroupResponse"
+        "404":
+          description: Contact group not found :(
+      tags:
+        - Contact Group Resource
+    delete:
+      summary: Delete a contact group
+      description: Deletes an existing contact group by its ID.
+      parameters:
+        - description: Unique identifier of the contact group
+          example: 1
+          name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: Contact group deleted successfully!
+        "404":
+          description: Contact group not found :(
+      tags:
+        - Contact Group Resource
+  /api/v1/groups/{groupId}/contacts:
+    get:
+      summary: Get contacts in a group
+      description: Returns a paginated list of contacts belonging to a specific group.
+      parameters:
+        - description: Unique identifier of the contact group
+          example: 1
+          name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - description: Zero-based page number
+          example: 0
+          name: page
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - description: Number of contacts per page. Must be between 1 and 100
+          example: 20
+          name: size
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 20
+      responses:
+        "200":
+          description: Contacts retrieved successfully!
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedResponse"
+        "400":
+          description: Invalid pagination parameters
+        "404":
+          description: Contact group not found :(
+      tags:
+        - Contact Group Resource
+info:
+  title: contacts-api API
+  version: 1.0-SNAPSHOT
+
