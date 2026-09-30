@@ -644,11 +644,23 @@ The contract is updated whenever the API contract changes.
 
 We use GitHub Flow for this project.
 
-- `main` contains the stable version of the project.
-- New work is developed on a dedicated feature branch.
-- Commits should be small and focused.
-- Feature branches are pushed to GitHub and merged through pull requests.
-- Pull requests are reviewed before merging into `main`.
-- After a pull request is merged, the feature branch can be deleted.
+* `main` contains the stable version of the project.
+* New work is developed on a dedicated feature branch.
+* Commits should be small and focused.
+* Feature branches are pushed to GitHub and merged through pull requests.
+* Pull requests are reviewed before merging into `main`.
+* After a pull request is merged, the feature branch can be deleted.
 
 We chose GitHub Flow because this project is developed incrementally, with each major task delivered through a dedicated pull request. GitFlow was not chosen because the project does not require long-lived `develop`, release, or hotfix branches. Trunk-based development was also not chosen because the assignment specifically requires working with feature branches and pull requests.
+
+### D4 Workflow Decisions
+
+The `git-workflow` branch was created from a clean and up-to-date `main` branch. During the task, `main` and the feature branch were intentionally given changes to the same part of the README so that a real conflict could be demonstrated.
+
+The conflict was resolved manually during a rebase with `main`. The final version kept the updated content from `main` while preserving the Git Workflow documentation from the feature branch. After resolving the conflict, the rebase was completed and the rebased branch was pushed using `git push --force-with-lease`.
+
+The changes were then submitted through a pull request, reviewed, confirmed to have no conflicts with `main`, and merged.
+
+### Conventional Commits
+
+Earlier commits in the project were created before adopting the Conventional Commits convention, so they do not consistently use conventional prefixes. Starting with the git-workflow branch commits, new commits follow the convention where appropriate, such as `docs: document GitHub Flow strategy` and `docs: update API contract wording`.
