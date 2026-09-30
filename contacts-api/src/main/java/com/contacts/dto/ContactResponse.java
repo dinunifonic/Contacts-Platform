@@ -6,17 +6,17 @@ import java.time.LocalDateTime;
 @Schema(description = "Response containing contact information")
 public class ContactResponse {
     @Schema(description = "Unique identifier of the contact", example = "1")
-    Long id;
+    private Long id;
     @Schema(description = "Contact's first name", example = "Dina")
-    String firstName;
+    private String firstName;
     @Schema(description = "Contact's last name", example = "Ismail")
-    String lastName;
+    private String lastName;
     @Schema(description = "Contact's email address", example = "dina@unifonic.com")
-    String email;
+    private String email;
     @Schema(description = "Contact's phone number", example = "0108357102")
-    String phone;
+    private String phone;
     @Schema(description = "ID of the contact group", example = "1", nullable = true)
-    Long groupId;
+    private Long groupId;
     @Schema(description = "Timestamp when the contact was created", example = "2026-09-28T14:30:00")
     private LocalDateTime createdTimestamp;
 

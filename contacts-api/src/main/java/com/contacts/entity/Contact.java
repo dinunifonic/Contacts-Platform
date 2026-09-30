@@ -1,19 +1,21 @@
 package com.contacts.entity;
 
-import io.quarkus.hibernate.orm.panache.PanacheEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.ManyToOne;
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 
 
 @Entity
-public class Contact extends PanacheEntity {
+@Table(name = "contact")
+public class Contact extends PanacheEntityBase {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
     @NotBlank
     private String firstName;
 
@@ -37,7 +39,7 @@ public class Contact extends PanacheEntity {
     public Long getId(){
         return id;
     }
-    public void setId(){
+    public void setId(Long id){
         this.id=id;
     }
 
