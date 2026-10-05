@@ -653,7 +653,7 @@ We use GitHub Flow for this project.
 
 We chose GitHub Flow because this project is developed incrementally, with each major task delivered through a dedicated pull request. GitFlow was not chosen because the project does not require long-lived `develop`, release, or hotfix branches. Trunk-based development was also not chosen because the assignment specifically requires working with feature branches and pull requests.
 
-### D4 Workflow Decisions
+### Workflow Decisions
 
 The `git-workflow` branch was created from a clean and up-to-date `main` branch. During the task, `main` and the feature branch were intentionally given changes to the same part of the README so that a real conflict could be demonstrated.
 
