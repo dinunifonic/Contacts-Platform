@@ -36,6 +36,8 @@ public class Contact extends PanacheEntityBase {
     @CreationTimestamp
     private LocalDateTime createdTimestamp;
 
+    private String owner;
+
     public Long getId(){
         return id;
     }
@@ -83,5 +85,12 @@ public class Contact extends PanacheEntityBase {
     }
     public void setCreatedTimestamp(LocalDateTime createdTimestamp) {
         this.createdTimestamp = createdTimestamp;
+    }
+
+    public String getOwner() {
+        return owner;
+    }
+    public void setOwner(String owner) {
+        this.owner = owner;
     }
 }

@@ -9,9 +9,11 @@ import com.contacts.exception.NotFoundException;
 import com.contacts.repository.ContactGroupRepository;
 import com.contacts.repository.ContactRepository;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
+import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,8 +26,15 @@ public class ContactService {
     @Inject
     ContactGroupRepository contactGroupRepository;
 
+    @Inject
+    JsonWebToken jwt;
+
+    @Inject
+    SecurityIdentity securityIdentity;
+
     @Transactional
     public ContactResponse createContact(ContactRequest contactRequest){
+        String owner = jwt.getSubject();
         ContactGroup contactGroup= null;
         if (contactRequest.getGroupId()!=null)
             contactGroup= contactGroupRepository.findById(contactRequest.getGroupId());
@@ -35,6 +44,7 @@ public class ContactService {
         contact.setEmail(contactRequest.getEmail());
         contact.setPhone(contactRequest.getPhone());
         contact.setContactGroup(contactGroup);
+        contact.setOwner(owner);
         contactRepository.persist(contact);
 
         ContactResponse contactResponse= new ContactResponse();
@@ -50,7 +60,17 @@ public class ContactService {
     }
 
     public ContactResponse getContactById(Long id){
-        Contact contact= contactRepository.findById(id);
+        Contact contact;
+        String owner= jwt.getSubject();
+        if(securityIdentity.hasRole("admin")) {
+            contact=contactRepository.findById(id);
+        }else{
+            contact= contactRepository.find(
+                    "id = ?1 and owner = ?2",
+                    id,
+                    owner
+            ).firstResult();
+        }
         if (contact == null) {
             throw new NotFoundException("Contact with id:" + id + " not found");
         }
@@ -69,10 +89,23 @@ public class ContactService {
 
     public PaginatedResponse<ContactResponse> getAllContacts(int page, int size, Long groupId){
         PanacheQuery<Contact> query;
-        if (groupId == null) {
-            query = contactRepository.findAll();
-        } else {
-            query = contactRepository.findByGroupId(groupId);
+        String owner= jwt.getSubject();
+        if(securityIdentity.hasRole("admin")) {
+            if (groupId == null) {
+                query = contactRepository.findAll();
+            } else {
+                query = contactRepository.findByGroupId(groupId);
+            }
+        }else{
+            if (groupId == null){
+                query= contactRepository.find("owner", owner);
+            }else{
+                query = contactRepository.find(
+                        "owner = ?1 and contactGroup.id = ?2",
+                        owner,
+                        groupId
+                );
+            }
         }
         List<Contact> contactsList = query.page(page, size).list();
         long totalElements = query.count();
@@ -103,7 +136,17 @@ public class ContactService {
 
     @Transactional
     public ContactResponse updateContact(Long id, ContactRequest contactRequest){
-        Contact contact=contactRepository.findById(id);
+        Contact contact;
+        String owner= jwt.getSubject();
+        if(securityIdentity.hasRole("admin")) {
+            contact = contactRepository.findById(id);
+        }else{
+            contact = contactRepository.find(
+                    "id = ?1 and owner = ?2",
+                    id,
+                    owner
+            ).firstResult();
+        }
         if (contact == null) {
             throw new NotFoundException("Contact with id:" + id + " not found");
         }
@@ -144,7 +187,17 @@ public class ContactService {
             throw new NotFoundException("Contact Group with id:" + groupId + " not found");
         }
 
-        PanacheQuery<Contact> query= contactRepository.findByGroupId(groupId);
+        String owner= jwt.getSubject();
+        PanacheQuery<Contact> query;
+        if(securityIdentity.hasRole("admin")) {
+            query= contactRepository.findByGroupId(groupId);
+        }else{
+            query = contactRepository.find(
+                    "contactGroup.id = ?1 and owner = ?2",
+                    groupId,
+                    owner
+            );
+        }
         List<Contact> contactsList= query.page(page, size).list();
         long totalElements = query.count();
         int totalPages = (int) Math.ceil((double) totalElements / size);

@@ -4,6 +4,8 @@ import com.contacts.dto.ContactRequest;
 import com.contacts.dto.ContactResponse;
 import com.contacts.dto.PaginatedResponse;
 import com.contacts.service.ContactService;
+import io.quarkus.security.Authenticated;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -11,15 +13,32 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.enums.SecuritySchemeType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.security.OAuthFlow;
+import org.eclipse.microprofile.openapi.annotations.security.OAuthFlows;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityScheme;
 
 import java.util.List;
 
 @Path("/api/v1/contacts")
+@Authenticated
+@SecurityScheme(
+        securitySchemeName = "keycloak",
+        type = SecuritySchemeType.OAUTH2,
+        flows = @OAuthFlows(
+                authorizationCode = @OAuthFlow(
+                        authorizationUrl = "http://localhost:8081/realms/contacts/protocol/openid-connect/auth",
+                        tokenUrl = "http://localhost:8081/realms/contacts/protocol/openid-connect/token"
+                )
+        )
+)
+@SecurityRequirement(name = "keycloak")
 public class ContactResource {
     @Inject
     ContactService contactService;
@@ -39,6 +58,7 @@ public class ContactResource {
             @APIResponse( responseCode = "409", description = "A contact with the same email already exists" )
     })
     @POST
+    @RolesAllowed("user")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response createContact(@Valid ContactRequest contactRequest){
@@ -61,6 +81,7 @@ public class ContactResource {
     })
     @GET
     @Path("/{id}")
+    @RolesAllowed("user")
     @Produces(MediaType.APPLICATION_JSON)
     public ContactResponse getContactById(@Parameter(description = "Unique identifier of the contact", example = "1")@PathParam("id") Long id){
         return contactService.getContactById(id);
@@ -77,6 +98,7 @@ public class ContactResource {
             @APIResponse( responseCode = "400", description = "Invalid pagination parameters" )
     })
     @GET
+    @RolesAllowed("user")
     @Produces(MediaType.APPLICATION_JSON)
     public PaginatedResponse<ContactResponse> getAllContacts(@Parameter(description = "Zero-based page number", example = "0")  @QueryParam("page") @DefaultValue("0") int page,
                                                              @Parameter(description = "Number of contacts per page. Must be between 1 and 100", example = "20") @QueryParam("size") @DefaultValue("20") int size,
@@ -99,6 +121,7 @@ public class ContactResource {
     })
     @PUT
     @Path("/{id}")
+    @RolesAllowed("user")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public ContactResponse updateContact(@Parameter(description = "Unique identifier of the contact", example = "1") @PathParam("id") Long id, @Valid ContactRequest contactRequest){
@@ -115,6 +138,7 @@ public class ContactResource {
     })
     @DELETE
     @Path("/{id}")
+    @RolesAllowed("admin")
     public Response deleteContact(@PathParam("id") Long id){
         contactService.deleteContact(id);
         return Response.noContent().build();
