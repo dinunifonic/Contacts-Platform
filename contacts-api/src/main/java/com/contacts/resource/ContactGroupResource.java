@@ -6,6 +6,8 @@ import com.contacts.dto.ContactResponse;
 import com.contacts.dto.PaginatedResponse;
 import com.contacts.service.ContactGroupService;
 import com.contacts.service.ContactService;
+import io.quarkus.security.Authenticated;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
@@ -17,9 +19,12 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.security.SecurityRequirement;
 
 
 @Path("/api/v1/groups")
+@Authenticated
+@SecurityRequirement(name = "keycloak")
 public class ContactGroupResource {
     @Inject
     ContactService contactService;
@@ -43,6 +48,7 @@ public class ContactGroupResource {
     })
     @GET
     @Path("/{groupId}/contacts")
+    @RolesAllowed("user")
     @Produces(MediaType.APPLICATION_JSON)
     public PaginatedResponse<ContactResponse> getContactsByGroup(@Parameter(description = "Zero-based page number", example = "0") @QueryParam("page")@DefaultValue("0") int page,
                                                                  @Parameter(description = "Number of contacts per page. Must be between 1 and 100", example = "20") @QueryParam("size")@DefaultValue("20") int size,
@@ -63,6 +69,7 @@ public class ContactGroupResource {
             @APIResponse( responseCode = "409", description = "A group with the same name already exists" )
     })
     @POST
+    @RolesAllowed("user")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response createContactGroup(@Valid ContactGroupRequest contactGroupRequest){
@@ -85,6 +92,7 @@ public class ContactGroupResource {
     })
     @GET
     @Path("/{groupId}")
+    @RolesAllowed("user")
     @Produces(MediaType.APPLICATION_JSON)
     public ContactGroupResponse getContactGroupById(@Parameter(description = "Unique identifier of the contact group", example = "1") @PathParam("groupId") Long id){
         return contactGroupService.getContactGroupById(id);
@@ -101,6 +109,7 @@ public class ContactGroupResource {
             @APIResponse( responseCode = "400", description = "Invalid pagination parameters" )
     })
     @GET
+    @RolesAllowed("user")
     @Produces(MediaType.APPLICATION_JSON)
     public PaginatedResponse<ContactGroupResponse> getAllContactGroups(@Parameter(description = "Zero-based page number", example = "0") @QueryParam("page")@DefaultValue("0") int page,
                                                                        @Parameter(description = "Number of contacts per page. Must be between 1 and 100", example = "20") @QueryParam("size")@DefaultValue("20") int size,
@@ -123,6 +132,7 @@ public class ContactGroupResource {
     })
     @PUT
     @Path("/{groupId}")
+    @RolesAllowed("user")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public ContactGroupResponse updateContactGroup(@Parameter(description = "Unique identifier of the contact group", example = "1") @PathParam("groupId") Long id, @Valid ContactGroupRequest contactGroupRequest){
@@ -139,6 +149,7 @@ public class ContactGroupResource {
     })
     @DELETE
     @Path("/{groupId}")
+    @RolesAllowed("admin")
     @Produces(MediaType.APPLICATION_JSON)
     public Response deleteContactGroup(@Parameter(description = "Unique identifier of the contact group", example = "1") @PathParam("groupId") Long id){
         contactGroupService.deleteContactGroup(id);

@@ -6,6 +6,7 @@ import com.contacts.dto.PaginatedResponse;
 import com.contacts.entity.ContactGroup;
 import com.contacts.exception.NotFoundException;
 import com.contacts.repository.ContactGroupRepository;
+import com.contacts.repository.ContactRepository;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -18,6 +19,8 @@ import java.util.List;
 public class ContactGroupService {
     @Inject
     ContactGroupRepository contactGroupRepository;
+    @Inject
+    ContactRepository contactRepository;
 
     @Transactional
     public ContactGroupResponse createContactGroup(ContactGroupRequest contactGroupRequest){
@@ -105,6 +108,10 @@ public class ContactGroupService {
         if (contactGroup == null) {
             throw new NotFoundException("Group with id:" + id + " not found");
         }
+        contactRepository.update(
+                "contactGroup = null where contactGroup.id = ?1",
+                id
+        );
 
         contactGroupRepository.delete(contactGroup);
     }

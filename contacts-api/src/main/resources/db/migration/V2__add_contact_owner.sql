@@ -1,0 +1,2 @@
+ALTER TABLE contact
+    ADD COLUMN owner VARCHAR(255);
