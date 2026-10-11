@@ -144,6 +144,19 @@ public class ContactResource {
         return Response.noContent().build();
     }
 
+    @GET
+    @Path("/reporter")
+    @RolesAllowed("read-contacts")
+    public PaginatedResponse<ContactResponse> getContactsReporter(
+            @QueryParam("page") @DefaultValue("0") int page,
+            @QueryParam("size") @DefaultValue("20") int size,
+            @QueryParam("groupId") Long groupId) {
 
+        if (page < 0 || size <= 0) {
+            throw new BadRequestException("Page must be non-negative and size must be positive");
+        }
+
+        return contactService.getAllContactsForReporter(page, size, groupId);
+    }
 
 }

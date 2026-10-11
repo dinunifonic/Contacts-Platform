@@ -1,7 +1,6 @@
 package com.contacts.dto;
 
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
-
 import java.util.List;
 
 @Schema(description = "Paginated response containing a list of resources and pagination information")

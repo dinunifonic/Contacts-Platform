@@ -225,4 +225,39 @@ public class ContactService {
         return response;
     }
 
+    public PaginatedResponse<ContactResponse> getAllContactsForReporter(int page, int size, Long groupId) {
+        PanacheQuery<Contact> query;
+        if (groupId == null) {
+            query = contactRepository.findAll();
+        } else {
+            query = contactRepository.findByGroupId(groupId);
+        }
+
+        List<Contact> contactsList = query.page(page, size).list();
+        long totalElements = query.count();
+        int totalPages = (int) Math.ceil((double) totalElements / size);
+
+        List<ContactResponse> contactResponseList = new ArrayList<ContactResponse>();
+        for (Contact contact : contactsList) {
+            ContactResponse response = new ContactResponse();
+            response.setId(contact.getId());
+            response.setFirstName(contact.getFirstName());
+            response.setLastName(contact.getLastName());
+            response.setEmail(contact.getEmail());
+            response.setPhone(contact.getPhone());
+            response.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
+            response.setCreatedTimestamp(contact.getCreatedTimestamp());
+            contactResponseList.add(response);
+        }
+
+        PaginatedResponse<ContactResponse> response = new PaginatedResponse<>();
+        response.setContent(contactResponseList);
+        response.setPage(page);
+        response.setSize(size);
+        response.setTotalElements(totalElements);
+        response.setTotalPages(totalPages);
+
+        return response;
+    }
+
 }
