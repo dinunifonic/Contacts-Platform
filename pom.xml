@@ -12,7 +12,7 @@
 
     <modules>
         <module>contacts-api</module>
-<!--        <module>contacts-reporter</module>-->
+        <module>contacts-reporter</module>
     </modules>
 
 </project>

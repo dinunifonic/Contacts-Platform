@@ -7,11 +7,10 @@
         <groupId>com.contacts</groupId>
         <artifactId>contacts-platform</artifactId>
         <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <groupId>com.contacts</groupId>
     <artifactId>contacts-api</artifactId>
-    <version>1.0-SNAPSHOT</version>
     <packaging>quarkus</packaging>
 
     <properties>

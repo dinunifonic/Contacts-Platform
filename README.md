@@ -13,9 +13,11 @@ Contacts-Platform/
 │   ├── pom.xml
 │   └── src/
 └── contacts-reporter/
+    ├── pom.xml
+    └── src/
 ```
 
-The `contacts-api` module contains the main REST API. The `contacts-reporter` module will be added in a later stage.
+The `contacts-api` module contains the main REST API, including contact and group management, persistence, validation, and security. The `contacts-reporter` module is a second Quarkus application that calls the API and exposes reporting data.
 
 ## Technologies
 
@@ -29,6 +31,9 @@ The `contacts-api` module contains the main REST API. The `contacts-reporter` mo
 * Flyway
 * Quarkus Dev Services
 * OpenAPI / Swagger UI
+* Keycloak
+* Quarkus OIDC and OIDC Client
+* MicroProfile REST Client
 
 ## Architecture
 
@@ -36,17 +41,17 @@ The `contacts-api` follows a layered architecture:
 
 ```text
 HTTP Request
-     ↓
+    ↓
 Resource
-     ↓
+    ↓
 DTO
-     ↓
+    ↓
 Service
-     ↓
+    ↓
 Repository
-     ↓
+    ↓
 Entity
-     ↓
+    ↓
 Database
 ```
 
@@ -59,6 +64,8 @@ The layers have separate responsibilities:
 * **Entity** - represents the persistence model.
 
 Resources do not access repositories directly, and persistence entities are not exposed directly through the REST API.
+
+The `contacts-reporter` follows a smaller structure. Its REST resource receives reporting requests, its REST client calls `contacts-api`, and its DTOs represent the data returned by the API. It does not maintain its own database.
 
 ## API Versioning
 
@@ -81,24 +88,33 @@ Versioning is included in the URL so that future API versions can be introduced 
 
 ### Contacts
 
-| Method | Endpoint                | Description                                                |
-| ------ | ----------------------- | ---------------------------------------------------------- |
-| POST   | `/api/v1/contacts`      | Create a contact                                           |
-| GET    | `/api/v1/contacts`      | Get contacts, with pagination and optional group filtering |
-| GET    | `/api/v1/contacts/{id}` | Get a contact by ID                                        |
-| PUT    | `/api/v1/contacts/{id}` | Update a contact                                           |
-| DELETE | `/api/v1/contacts/{id}` | Delete a contact                                           |
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/v1/contacts` | Create a contact |
+| GET | `/api/v1/contacts` | Get contacts, with pagination and optional group filtering |
+| GET | `/api/v1/contacts/{id}` | Get a contact by ID |
+| PUT | `/api/v1/contacts/{id}` | Update a contact |
+| DELETE | `/api/v1/contacts/{id}` | Delete a contact |
 
 ### Contact Groups
 
-| Method | Endpoint                            | Description                                                     |
-| ------ | ----------------------------------- | --------------------------------------------------------------- |
-| POST   | `/api/v1/groups`                    | Create a contact group                                          |
-| GET    | `/api/v1/groups`                    | Get contact groups, with pagination and optional name filtering |
-| GET    | `/api/v1/groups/{groupId}`          | Get a contact group by ID                                       |
-| PUT    | `/api/v1/groups/{groupId}`          | Update a contact group                                          |
-| DELETE | `/api/v1/groups/{groupId}`          | Delete a contact group                                          |
-| GET    | `/api/v1/groups/{groupId}/contacts` | Get paginated contacts belonging to a group                     |
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/v1/groups` | Create a contact group |
+| GET | `/api/v1/groups` | Get contact groups, with pagination and optional name filtering |
+| GET | `/api/v1/groups/{groupId}` | Get a contact group by ID |
+| PUT | `/api/v1/groups/{groupId}` | Update a contact group |
+| DELETE | `/api/v1/groups/{groupId}` | Delete a contact group |
+| GET | `/api/v1/groups/{groupId}/contacts` | Get paginated contacts belonging to a group |
+
+### Reporting
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/v1/contacts/reporter` | Return paginated contacts for authorized reporting clients |
+| GET | `/reporters/contacts` | Return reporting data through `contacts-reporter` |
+
+The reporter endpoint calls the API reporting endpoint and returns its response. It does not query the database directly.
 
 ## API Standards
 
@@ -106,12 +122,12 @@ Versioning is included in the URL so that future API versions can be introduced 
 
 The API uses standard HTTP methods according to the operation being performed.
 
-| Operation         | Method | Success Status   |
-| ----------------- | ------ | ---------------- |
-| Create resource   | POST   | `201 Created`    |
-| Retrieve resource | GET    | `200 OK`         |
-| Update resource   | PUT    | `200 OK`         |
-| Delete resource   | DELETE | `204 No Content` |
+| Operation | Method | Success Status |
+|---|---|---|
+| Create resource | POST | `201 Created` |
+| Retrieve resource | GET | `200 OK` |
+| Update resource | PUT | `200 OK` |
+| Delete resource | DELETE | `204 No Content` |
 
 POST requests return `201 Created` and include a `Location` header pointing to the newly created resource.
 
@@ -228,12 +244,12 @@ The response contains:
 
 The main error cases are:
 
-| Situation                            | Status                      |
-| ------------------------------------ | --------------------------- |
-| Invalid request / validation failure | `400 Bad Request`           |
-| Resource not found                   | `404 Not Found`             |
-| Duplicate unique value               | `409 Conflict`              |
-| Unexpected server error              | `500 Internal Server Error` |
+| Situation | Status |
+|---|---|
+| Invalid request / validation failure | `400 Bad Request` |
+| Resource not found | `404 Not Found` |
+| Duplicate unique value | `409 Conflict` |
+| Unexpected server error | `500 Internal Server Error` |
 
 A duplicate email or group name is returned as `409 Conflict`.
 
@@ -252,8 +268,9 @@ A Contact contains:
 * `phone`
 * `groupId`
 * `createdTimestamp`
+* `owner`
 
-Email addresses are unique.
+Email addresses are unique. The owner identifies the user associated with a contact and is used to enforce data isolation.
 
 ### ContactGroup
 
@@ -280,12 +297,12 @@ The relationship is represented as:
 
 ```text
 ContactGroup
-     1
-     |
-     | contains
-     |
-     *
-  Contact
+    1
+    |
+    | contains
+    |
+    *
+ Contact
 ```
 
 The `Contact` entity owns the relationship through its `contactGroup` field. The `ContactGroup` entity uses `mappedBy = "contactGroup"` for the inverse side.
@@ -317,6 +334,8 @@ The migration creates:
 * Primary keys
 * Unique constraints for group names and contact emails
 * The foreign key between contacts and contact groups
+
+Later migrations introduce additional schema changes. For example, the owner field is added through a versioned migration rather than by relying on automatic Hibernate schema generation.
 
 The `contact_group` table is created before the `contact` table because the contact table contains a foreign key referencing the group table.
 
@@ -368,15 +387,15 @@ The resulting startup flow is:
 
 ```text
 Quarkus starts
-      ↓
+     ↓
 Dev Services starts MySQL
-      ↓
+     ↓
 Flyway validates migrations
-      ↓
+     ↓
 Flyway applies pending migrations
-      ↓
+     ↓
 Hibernate connects to the existing schema
-      ↓
+     ↓
 Application starts
 ```
 
@@ -415,21 +434,21 @@ Make sure the following are installed:
 * Docker
 * Git
 
-### Start the application
+### Start the API
 
 From the project root:
 
 ```bash
-./mvnw quarkus:dev
+./mvnw -pl contacts-api quarkus:dev
 ```
 
 On Windows PowerShell:
 
 ```powershell
-.\mvnw.cmd quarkus:dev
+.\mvnw.cmd -pl contacts-api quarkus:dev
 ```
 
-The application runs by default at:
+The API runs at:
 
 ```text
 http://localhost:8080
@@ -440,6 +459,25 @@ Quarkus development mode provides live reload, so changes to the application can
 When running in development mode, Quarkus Dev Services automatically starts the MySQL database when Docker is available.
 
 Flyway then applies the database migrations before the application starts.
+
+### Start the Reporter
+
+The reporter needs the API and Keycloak to be running. Configure its client secret through an environment variable before starting it.
+
+On Windows PowerShell:
+
+```powershell
+$env:REPORTER_CLIENT_SECRET = "YOUR_ACTUAL_CLIENT_SECRET"
+.\mvnw.cmd -pl contacts-reporter quarkus:dev
+```
+
+The reporter runs at:
+
+```text
+http://localhost:8082
+```
+
+The secret must be set locally. Do not commit the actual value to the repository.
 
 ## Testing the API
 
@@ -636,8 +674,6 @@ The database enforces the relationship through a foreign key.
 
 The exported OpenAPI contract is committed to the repository and represents the API contract independently of the implementation.
 
-
-
 The contract is updated whenever the API contract changes.
 
 ## Git Workflow
@@ -664,3 +700,186 @@ The changes were then submitted through a pull request, reviewed, confirmed to h
 ### Conventional Commits
 
 Earlier commits in the project were created before adopting the Conventional Commits convention, so they do not consistently use conventional prefixes. Starting with the `git-workflow` branch commits, new commits follow the convention where appropriate, such as `docs: document GitHub Flow strategy` and `docs: update API contract wording`.
+
+## Security and Authentication
+
+### Keycloak
+
+Keycloak is used as the identity provider for `contacts-api` and the service-to-service authentication flow. The configured realm is `contacts`.
+
+The API is configured to accept bearer tokens issued by the expected realm. The `contacts-reporter` authenticates to Keycloak as a service rather than as a human user.
+
+### User Authentication and Authorization
+
+The API uses bearer-token authentication and role-based authorization.
+
+* Ordinary users have the `user` role.
+* Administrators have the `admin` role.
+* The reporter service account has the `read-contacts` client role for `contacts-api`.
+
+The API verifies that a token is valid before allowing access to protected endpoints. Authorization rules determine which operations the authenticated identity may perform.
+
+For contact data, ownership rules restrict ordinary users to their own contacts, while administrators have broader access. The owner is associated with the authenticated identity rather than being trusted as arbitrary client-supplied data.
+
+### Token Validation
+
+The API expects tokens issued by the configured Keycloak realm and intended for the `contacts-api` audience.
+
+The audience configuration is:
+
+```properties
+quarkus.oidc.token.audience=contacts-api
+```
+
+The `contacts-reporter` client has an Audience mapper configured to include `contacts-api` in its access tokens. A token with the wrong audience is rejected, even if it was issued by Keycloak.
+
+Tokens issued by a different realm are rejected because their issuer does not match the configured realm.
+
+Important JWT claims include:
+
+* `iss` — identifies the issuer that created the token.
+* `aud` — identifies the intended audience of the token.
+* `exp` — identifies the token's expiration time.
+* `sub` — identifies the token subject.
+* `azp` — identifies the authorized party/client associated with the token.
+* `resource_access` — may contain client-specific roles, including `read-contacts`.
+
+The API must validate the token's signature and relevant claims. Decoding a JWT only displays its contents; decoding alone does not prove that the token is authentic or valid.
+
+### Secret Management
+
+The reporter's client secret is provided through the `REPORTER_CLIENT_SECRET` environment variable instead of being stored in source code.
+
+For example, in PowerShell:
+
+```powershell
+$env:REPORTER_CLIENT_SECRET = "YOUR_ACTUAL_CLIENT_SECRET"
+```
+
+The placeholder should be replaced locally with the secret configured in Keycloak. The real value must not be committed to Git or included in documentation.
+
+When the client secret is rotated in Keycloak, the environment variable must be updated and the reporter restarted so it uses the new secret. Secret rotation was tested successfully.
+
+## Service-to-Service Authentication
+
+### Client Credentials Grant
+
+The `contacts-reporter` uses the OAuth 2.0 client-credentials grant. This is suitable for backend-to-backend communication because the reporter acts using its own service identity, without a human user logging in.
+
+The reporter is configured as a confidential Keycloak client with client authentication and service accounts enabled. Its service account is assigned the `read-contacts` client role for `contacts-api`.
+
+The reporter's Quarkus configuration includes:
+
+```properties
+quarkus.oidc-client.auth-server-url=http://localhost:8081/realms/contacts
+quarkus.oidc-client.client-id=contacts-reporter
+quarkus.oidc-client.credentials.secret=${REPORTER_CLIENT_SECRET}
+quarkus.oidc-client.grant.type=client
+
+quarkus.rest-client.contacts-api.url=http://localhost:8080
+quarkus.http.port=8082
+```
+
+The client secret is supplied by the environment variable and must not be hard-coded into this configuration.
+
+### Token Acquisition and Propagation
+
+The reporter uses Quarkus `OidcClient` configuration to obtain an access token from Keycloak. Its MicroProfile REST client uses `@OidcClientFilter` to attach the bearer token to outgoing API requests.
+
+The flow is:
+
+```text
+contacts-reporter
+       |
+       | client credentials
+       v
+Keycloak
+       |
+       | access token
+       v
+contacts-reporter
+       |
+       | REST client with Bearer token
+       v
+contacts-api
+       |
+       | validate token and role
+       v
+Reporting response
+```
+
+This avoids implementing token retrieval and bearer-header propagation separately for each request.
+
+### Reporting Endpoints
+
+The API exposes a dedicated endpoint for authorized reporting access:
+
+```text
+GET /api/v1/contacts/reporter?page=0&size=20
+```
+
+It requires the `read-contacts` role. Keeping reporting access on a separate endpoint avoids weakening the existing user-ownership rules for ordinary contact endpoints.
+
+The reporter exposes:
+
+```text
+GET http://localhost:8082/reporters/contacts
+```
+
+It calls the API and returns the paginated response. The reporter does not have its own database.
+
+### Failure-Case Testing
+
+The service-to-service flow was tested using both successful requests and invalid configurations.
+
+| Scenario | Expected result | Observed result |
+|---|---|---|
+| Correct client secret and required role | Reporter returns API data | Successful JSON response |
+| Incorrect client secret | Keycloak refuses client authentication | `unauthorized_client` / invalid client credentials |
+| Service account lacks `read-contacts` | API refuses authorization | `403 Forbidden` |
+| Token has the wrong audience | API rejects the token | `401 Unauthorized` |
+| Token is issued by a different realm | API rejects the token | `401 Unauthorized` |
+| Expired token | API rejects the token | Expiry check performed |
+| Rotated secret is configured in the reporter | Reporter authenticates using the new secret | Successful JSON response after update and restart |
+
+The wrong-role test was performed by temporarily removing `read-contacts` from the service account and then restoring it. The wrong-audience test used a token that did not contain the required `contacts-api` audience. The wrong-issuer test used a temporary realm; that realm and its test client were deleted after testing.
+
+The expiry check verifies that expired access tokens are not accepted. The reporter also needs to obtain a fresh token for subsequent requests rather than relying on an expired token.
+
+### D8 Design Decisions
+
+* **Client credentials instead of user login:** the reporter is a backend service and must authenticate when no user is present.
+* **Confidential client and service account:** the reporter has its own identity and authenticates to Keycloak using a client secret.
+* **Quarkus OIDC client:** token acquisition is delegated to the Quarkus OIDC client implementation.
+* **REST client token filter:** `@OidcClientFilter` propagates the service token on outgoing requests.
+* **Dedicated reporting role:** `read-contacts` grants the reporter the permissions required for reporting without granting it administrator access.
+* **Separate reporting endpoint:** reporting access is isolated from normal user-owned contact operations.
+* **Audience validation:** the token must be intended for `contacts-api`, not merely validly issued by Keycloak.
+* **Issuer validation:** tokens must originate from the configured `contacts` realm.
+* **Environment-based secret configuration:** the secret can be changed without editing or committing source code.
+* **Failure-path testing:** incorrect credentials, missing roles, wrong audience, wrong issuer, and expiry are included in verification rather than testing only the happy path.
+
+## Running the Reporter
+
+Start Keycloak and `contacts-api` first. Then configure the reporter secret and start the reporter module from the project root.
+
+On Windows PowerShell:
+
+```powershell
+$env:REPORTER_CLIENT_SECRET = "YOUR_ACTUAL_CLIENT_SECRET"
+.\mvnw.cmd -pl contacts-reporter quarkus:dev
+```
+
+The current local development setup uses these ports:
+
+* Keycloak: `8081`
+* `contacts-api`: `8080`
+* `contacts-reporter`: `8082`
+
+Open the reporter endpoint:
+
+```text
+http://localhost:8082/reporters/contacts
+```
+
+A successful response demonstrates that the reporter can obtain a service token, call the API, and return its data without a user logging in.
