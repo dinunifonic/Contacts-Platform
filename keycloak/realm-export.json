@@ -356,6 +356,7 @@
           "attributes": {}
         }
       ],
+      "audience-test": [],
       "contacts-api": [
         {
           "id": "2f00468f-9c11-4ab4-912b-ebf89a6e4858",
@@ -550,6 +551,22 @@
   "webAuthnPolicyPasswordlessExtraOrigins": [],
   "users": [
     {
+      "id": "1ae39aac-44ab-420f-b878-92ff247eef27",
+      "username": "service-account-audience-test",
+      "emailVerified": false,
+      "enabled": true,
+      "createdTimestamp": 1791375676386,
+      "totp": false,
+      "serviceAccountClientId": "audience-test",
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": [
+        "default-roles-contacts"
+      ],
+      "notBefore": 0,
+      "groups": []
+    },
+    {
       "id": "eba7c4e4-9d38-411a-98ba-23f6c1d2eb2f",
       "username": "service-account-contacts-reporter",
       "emailVerified": false,
@@ -740,6 +757,66 @@
       ]
     },
     {
+      "id": "3e816c95-226c-4472-99ff-67ed5090d0df",
+      "clientId": "audience-test",
+      "name": "",
+      "description": "",
+      "rootUrl": "",
+      "adminUrl": "",
+      "baseUrl": "",
+      "surrogateAuthRequired": false,
+      "enabled": true,
+      "alwaysDisplayInConsole": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "**********",
+      "redirectUris": [
+        "/*"
+      ],
+      "webOrigins": [
+        "/*"
+      ],
+      "notBefore": 0,
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "realm_client": "false",
+        "oidc.ciba.grant.enabled": "false",
+        "client.secret.creation.time": "1791375676",
+        "backchannel.logout.session.required": "true",
+        "standard.token.exchange.enabled": "false",
+        "oauth2.jwt.authorization.grant.enabled": "false",
+        "oauth2.device.authorization.grant.enabled": "false",
+        "backchannel.logout.revoke.offline.tokens": "false",
+        "dpop.bound.access.tokens": "false"
+      },
+      "authenticationFlowBindingOverrides": {},
+      "fullScopeAllowed": true,
+      "nodeReRegistrationTimeout": -1,
+      "defaultClientScopes": [
+        "web-origins",
+        "service_account",
+        "acr",
+        "profile",
+        "roles",
+        "basic",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "organization",
+        "microprofile-jwt"
+      ]
+    },
+    {
       "id": "d73832d7-8617-4cdc-a720-e1007a8ff7f7",
       "clientId": "broker",
       "name": "${client_broker}",
@@ -826,6 +903,21 @@
       "nodeReRegistrationTimeout": -1,
       "protocolMappers": [
         {
+          "id": "088bb635-3328-4202-9b3b-4a01d5afbfa8",
+          "name": "contacts-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "contacts-api",
+            "id.token.claim": "false",
+            "lightweight.claim": "false",
+            "introspection.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
           "id": "31001ac6-c362-4f5b-a7f6-e9517b68a3a5",
           "name": "groups",
           "protocol": "openid-connect",
@@ -870,8 +962,12 @@
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
-      "redirectUris": [],
-      "webOrigins": [],
+      "redirectUris": [
+        "http://localhost:8080/q/swagger-ui/oauth2-redirect.html"
+      ],
+      "webOrigins": [
+        "http://localhost:8080"
+      ],
       "notBefore": 0,
       "bearerOnly": false,
       "consentRequired": false,
@@ -904,6 +1000,7 @@
         "acr",
         "profile",
         "roles",
+        "contacts-api-audience",
         "basic",
         "email"
       ],
@@ -948,7 +1045,7 @@
         "logout.confirmation.enabled": "false",
         "realm_client": "false",
         "oidc.ciba.grant.enabled": "false",
-        "client.secret.creation.time": "1791117299",
+        "client.secret.creation.time": "1791687842",
         "backchannel.logout.session.required": "true",
         "standard.token.exchange.enabled": "false",
         "oauth2.jwt.authorization.grant.enabled": "false",
@@ -961,6 +1058,22 @@
       "authenticationFlowBindingOverrides": {},
       "fullScopeAllowed": true,
       "nodeReRegistrationTimeout": -1,
+      "protocolMappers": [
+        {
+          "id": "c8d1a99f-9835-4354-9024-9e26b507de13",
+          "name": "contacts-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "contacts-api",
+            "id.token.claim": "false",
+            "lightweight.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ],
       "defaultClientScopes": [
         "web-origins",
         "service_account",
@@ -1448,6 +1561,33 @@
             "access.token.claim": "true",
             "claim.name": "upn",
             "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "id": "0ece8da6-a603-4889-930a-de551c0aab63",
+      "name": "contacts-api-audience",
+      "description": "",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "include.in.openid.provider.metadata": "true",
+        "display.on.consent.screen": "true"
+      },
+      "protocolMappers": [
+        {
+          "id": "0e306478-1f7e-4726-809e-3a9aa6d13671",
+          "name": "contacts-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "contacts-api",
+            "id.token.claim": "false",
+            "lightweight.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
           }
         }
       ]

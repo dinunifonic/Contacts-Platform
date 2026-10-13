@@ -12,10 +12,28 @@ Contacts-Platform/
 ├── contacts-api/
 │   ├── pom.xml
 │   └── src/
+│       ├── main/
+│       └── test/
+│           ├── resource/
+│           │   ├── ContactResourceTest.java
+│           │   └── ContactGroupResourceTest.java
+│           └── service/
+│               ├── ContactServiceTest.java
+│               └── ContactGroupServiceTest.java
 └── contacts-reporter/
     ├── pom.xml
     └── src/
+        ├── main/
+        │   └── service/
+        │       └── ContactReporterService.java
+        └── test/
+            ├── resource/
+            │   └── ContactReporterResourceTest.java
+            └── service/
+                └── ContactReporterServiceTest.java
 ```
+
+Test classes live under `src/test/java/com/contacts/`, mirroring the package of the class they test.
 
 The `contacts-api` module contains the main REST API, including contact and group management, persistence, validation, and security. The `contacts-reporter` module is a second Quarkus application that calls the API and exposes reporting data.
 
@@ -34,6 +52,10 @@ The `contacts-api` module contains the main REST API, including contact and grou
 * Keycloak
 * Quarkus OIDC and OIDC Client
 * MicroProfile REST Client
+* JUnit 5, Mockito and AssertJ
+* `@QuarkusTest` with RestAssured
+* Testcontainers (through Quarkus Dev Services)
+* JaCoCo
 
 ## Architecture
 
@@ -65,7 +87,7 @@ The layers have separate responsibilities:
 
 Resources do not access repositories directly, and persistence entities are not exposed directly through the REST API.
 
-The `contacts-reporter` follows a smaller structure. Its REST resource receives reporting requests, its REST client calls `contacts-api`, and its DTOs represent the data returned by the API. It does not maintain its own database.
+The `contacts-reporter` follows a smaller structure. Its REST resource receives reporting requests, its service derives reporting data, its REST client calls `contacts-api`, and its DTOs represent the data returned by the API. It does not maintain its own database.
 
 ## API Versioning
 
@@ -113,6 +135,7 @@ Versioning is included in the URL so that future API versions can be introduced 
 |---|---|---|
 | GET | `/api/v1/contacts/reporter` | Return paginated contacts for authorized reporting clients |
 | GET | `/reporters/contacts` | Return reporting data through `contacts-reporter` |
+| GET | `/reporters/contacts/count` | Return the total number of contacts through `contacts-reporter` |
 
 The reporter endpoint calls the API reporting endpoint and returns its response. It does not query the database directly.
 
@@ -501,6 +524,165 @@ Example workflow:
 
 The CRUD, pagination, filtering, validation, status codes, error handling, and persistence behavior were manually tested through Swagger UI during development.
 
+## Automated Tests
+
+### Test Pyramid
+
+The test suite follows the test pyramid:
+
+```text
+        @QuarkusTest + RestAssured
+       (endpoints, security, database)
+                    ↑
+         Unit tests (JUnit 5 + Mockito)
+          (business logic in services)
+```
+
+* **Unit tests** test the service classes in isolation. Repositories, `JsonWebToken`, `SecurityIdentity` and the REST client are mocked with Mockito, so these tests are fast and do not start Quarkus.
+* **Integration tests** start the application with `@QuarkusTest` and call the real HTTP endpoints with RestAssured, against a real MySQL database.
+
+Every test follows the Arrange / Act / Assert (AAA) structure and is named as a sentence describing the behaviour, for example `deleteContact_asRegularUser_shouldReturn403`.
+
+### Test Classes
+
+| Module | Test class | Type | Covers |
+|---|---|---|---|
+| `contacts-api` | `ContactServiceTest` | Unit | Contact business logic, owner rules, admin access, paging maths, missing groups |
+| `contacts-api` | `ContactGroupServiceTest` | Unit | Group business logic, paging maths, unassigning contacts before deleting a group |
+| `contacts-api` | `ContactResourceTest` | Integration | Contact endpoints: happy path, invalid input, not found, duplicate, security, reporter endpoint |
+| `contacts-api` | `ContactGroupResourceTest` | Integration | Group endpoints: happy path, invalid input, not found, duplicate, security, contacts of a group |
+| `contacts-reporter` | `ContactReporterServiceTest` | Unit | Total contacts derived from the API response |
+| `contacts-reporter` | `ContactReporterResourceTest` | Integration | Reporter endpoints with a mocked `ContactsApiClient` |
+
+At least one parameterised test (`@ParameterizedTest`) is included, for example invalid pagination values and different contact names.
+
+### What the Integration Tests Verify
+
+For each endpoint, the integration tests cover:
+
+| Case | Expected status |
+|---|---|
+| Happy path | `200 OK` / `201 Created` / `204 No Content` |
+| Invalid input | `400 Bad Request` |
+| Resource not found | `404 Not Found` |
+| Duplicate email or group name | `409 Conflict` |
+
+Error responses are also checked for the `application/problem+json` media type.
+
+### Security Tests
+
+Security is tested with `@TestSecurity` and `@OidcSecurity` from `quarkus-test-security-oidc`. These annotations define the authenticated user, its roles and its `sub` claim for a single test, without requiring Keycloak.
+
+| Scenario | Expected status |
+|---|---|
+| No token | `401 Unauthorized` |
+| Wrong role, for example a `user` deleting a contact | `403 Forbidden` |
+| Correct role, for example an `admin` deleting a contact | `204 No Content` |
+| `user` calling the reporter endpoint | `403 Forbidden` |
+| `read-contacts` calling the reporter endpoint | `200 OK` |
+
+Data isolation is tested with two different users: a contact owned by `user-a` returns `404 Not Found` for `user-b`, while an `admin` can still read it.
+
+### Test Data and Isolation
+
+All `@QuarkusTest` classes share one database during a test run. To keep tests independent of their execution order:
+
+* Each test uses its own unique email addresses and group names, because both are unique in the database.
+* Tests that count results use their own user (`sub` claim), so contacts created by other tests are not visible to them.
+* Data owned by another user is arranged directly through the repository inside `QuarkusTransaction.requiringNew()`, so it is committed before the HTTP call is made.
+
+### Dev Services and Testcontainers
+
+No database configuration is needed for tests. When `@QuarkusTest` starts, Quarkus Dev Services uses Testcontainers to start a MySQL container through Docker, and Flyway builds the schema from the migrations.
+
+Docker must therefore be running before the tests are started.
+
+The `contacts-reporter` tests do not need `contacts-api` or Keycloak. The REST client is replaced with a Mockito mock using `@InjectMock @RestClient`.
+
+### Coverage Gate
+
+Line coverage is measured with JaCoCo in both modules:
+
+* `quarkus-jacoco` records coverage for `@QuarkusTest` tests.
+* `jacoco-maven-plugin` (`prepare-agent`) records coverage for the plain unit tests.
+* Both write into the same file, `target/jacoco-quarkus.exec`.
+
+The `check` goal runs in the `verify` phase and fails the build if line coverage is below 80% in:
+
+```text
+com.contacts.service
+com.contacts.resource
+```
+
+The gate was verified by temporarily raising the minimum and disabling a test class, which made the build fail with a `Rule violated` message.
+
+Coverage is a floor, not a goal. The suite is meant to fail when behaviour changes, not only to reach a percentage.
+
+### Running the Tests
+
+Make sure Docker is running.
+
+In IntelliJ, open the **Maven** tool window, expand the module, select **Lifecycle → clean** and **verify**, and run them.
+
+Or from a module folder on Windows PowerShell:
+
+```powershell
+cd contacts-api
+.\mvnw.cmd clean verify
+```
+
+The build output shows the test results and the coverage gate result:
+
+```text
+Tests run: ..., Failures: 0, Errors: 0, Skipped: 0
+All coverage checks have been met.
+BUILD SUCCESS
+```
+
+The HTML coverage report is generated at:
+
+```text
+contacts-api/target/jacoco-report/index.html
+contacts-reporter/target/jacoco-report/index.html
+```
+
+### Test Configuration
+
+Test-only configuration in `application.properties`:
+
+```properties
+quarkus.http.test-port=0
+%test.quarkus.jacoco.reuse-data-file=true
+```
+
+* `quarkus.http.test-port=0` runs the tests on a random free port, so they do not clash with Keycloak on `8081`.
+* `reuse-data-file` lets JaCoCo combine unit-test and `@QuarkusTest` coverage in one report.
+
+In `contacts-reporter`, the client secret is given a placeholder value in the test profile only, because the REST client is mocked and no token is requested:
+
+```properties
+%test.quarkus.oidc-client.credentials.secret=test-only-not-a-real-secret
+```
+
+This is not a real secret. The real secret is still provided through `REPORTER_CLIENT_SECRET`.
+
+### Bugs Found by the Tests
+
+Writing the tests revealed real bugs, which were then fixed:
+
+| Bug | Found by |
+|---|---|
+| `POST /api/v1/groups` returned a `Location` header pointing to `/api/v1/contacts/{id}` | `createContactGroup_shouldReturn201WithLocationHeader` |
+| `GET /api/v1/contacts/reporter?size=0` returned `500` instead of `400` | `getContactsReporter_withInvalidPagination_shouldReturn400` |
+
+### Testing Design Decisions
+
+* **Mocked unit tests for services:** business rules such as ownership and paging are tested quickly without a database or Quarkus.
+* **`@QuarkusTest` for endpoints:** validation, exception mapping, security annotations and the database constraints are only fully tested through the running application.
+* **`@TestSecurity` instead of Keycloak in tests:** the tests check the application's authorization rules, not Keycloak itself. The real token flow is tested manually, as described in the service-to-service section.
+* **Real MySQL through Dev Services:** uniqueness and foreign keys are enforced by the database, so they are tested against the same database engine used in development.
+* **Coverage gate in the build:** the build fails automatically when coverage drops, instead of relying on someone checking a report.
+
 ## Configuration
 
 The application uses Quarkus configuration profiles.
@@ -828,6 +1010,14 @@ GET http://localhost:8082/reporters/contacts
 
 It calls the API and returns the paginated response. The reporter does not have its own database.
 
+The reporter also exposes a derived value:
+
+```text
+GET http://localhost:8082/reporters/contacts/count
+```
+
+`ContactReporterService` requests a single page of size `1` from the API and returns its `totalElements`, because only the total is needed, not the contacts themselves.
+
 ### Failure-Case Testing
 
 The service-to-service flow was tested using both successful requests and invalid configurations.
@@ -846,7 +1036,7 @@ The wrong-role test was performed by temporarily removing `read-contacts` from t
 
 The expiry check verifies that expired access tokens are not accepted. The reporter also needs to obtain a fresh token for subsequent requests rather than relying on an expired token.
 
-### D8 Design Decisions
+### Service to Service Design Decisions
 
 * **Client credentials instead of user login:** the reporter is a backend service and must authenticate when no user is present.
 * **Confidential client and service account:** the reporter has its own identity and authenticates to Keycloak using a client secret.
