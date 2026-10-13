@@ -458,6 +458,95 @@ Make sure the following are installed:
 * Docker
 * Git
 
+### Start Keycloak
+
+Keycloak must be running before `contacts-api` or `contacts-reporter` are started. The whole realm configuration is committed in:
+
+```text
+keycloak/realm-export.json
+```
+
+Start Keycloak 26.8.0 with Docker and import the realm from the project root.
+
+On Windows PowerShell:
+
+```powershell
+docker run --name keycloak -p 8081:8080 `
+  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin `
+  -e KC_BOOTSTRAP_ADMIN_PASSWORD=CHOOSE_A_LOCAL_PASSWORD `
+  -v "${PWD}/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json" `
+  quay.io/keycloak/keycloak:26.8.0 start-dev --import-realm
+```
+
+* Keycloak runs on port `8081`, so it does not clash with `contacts-api` on `8080`.
+* `--import-realm` creates the `contacts` realm from the mounted file on startup.
+* Only `realm-export.json` is mounted, so no other file in the `keycloak/` folder is imported by mistake.
+* The bootstrap admin is only for the local Keycloak admin console. Choose a local password; it is not used by the applications.
+
+The admin console is available at:
+
+```text
+http://localhost:8081
+```
+
+#### What the Realm Contains
+
+| Item | Name | Purpose |
+|---|---|---|
+| Realm | `contacts` | Realm trusted by `contacts-api` |
+| Client | `contacts-api` | Resource server; defines the `read-contacts` client role |
+| Client | `contacts-frontend` | Public client used by Swagger UI for user login |
+| Client | `contacts-reporter` | Confidential client with a service account, used by the reporter |
+| Client | `audience-test` | Client used to demonstrate that a token with the wrong audience is rejected |
+| Realm role | `user` | Ordinary user: read and create own contacts |
+| Realm role | `admin` | Administrator: full access, including delete |
+| Client role | `read-contacts` | Assigned to the `contacts-reporter` service account |
+
+#### Set the Reporter Secret After Import
+
+Client secrets are masked (`**********`) in the export, so they are never stored in the repository. After importing the realm, generate a new secret for the reporter:
+
+1. Open the admin console and select the `contacts` realm.
+2. Go to **Clients → contacts-reporter → Credentials**.
+3. Click **Regenerate** and copy the new client secret.
+4. Provide it to the reporter through the `REPORTER_CLIENT_SECRET` environment variable, as described in [Start the Reporter](#start-the-reporter).
+
+#### Create the Test Users
+
+To demonstrate role-based access and the owner rule, two users are needed in the `contacts` realm:
+
+| Username | Realm roles | Can |
+|---|---|---|
+| `alice` | `user` | Read and create her own contacts |
+| `admin-user` | `user`, `admin` | Read all contacts and delete contacts |
+
+If they are not present after the import, create them in the admin console:
+
+1. Go to **Users → Create new user**, enter the username and click **Create**.
+2. Open the **Credentials** tab, set a password and turn **Temporary** off.
+3. Open the **Role mapping** tab, click **Assign role**, filter by realm roles and assign the roles from the table above.
+
+These are local test users only. Their passwords must not be real passwords used anywhere else.
+
+#### Verify the Setup
+
+Fetch a token for the reporter's service account, with no user involved:
+
+```powershell
+curl.exe -X POST http://localhost:8081/realms/contacts/protocol/openid-connect/token `
+  -d "grant_type=client_credentials" `
+  -d "client_id=contacts-reporter" `
+  -d "client_secret=$env:REPORTER_CLIENT_SECRET"
+```
+
+A successful response contains an `access_token`. Decoding it should show `iss` ending in `/realms/contacts`, `contacts-api` in `aud`, and `read-contacts` under `resource_access.contacts-api.roles`.
+
+To start again from a clean state, remove the container and run the `docker run` command again:
+
+```powershell
+docker rm -f keycloak
+```
+
 ### Start the API
 
 From the project root:
