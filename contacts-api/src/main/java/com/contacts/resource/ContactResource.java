@@ -89,7 +89,7 @@ public class ContactResource {
 
     @Operation(
             summary = "Get all contacts",
-            description = "Returns a paginated list of contacts, optionally filtered by group ID."
+            description = "Returns a paginated list of contacts, optionally filtered by group ID. Ordinary users only see their own contacts; administrators and the reporting service account (read-contacts) see all contacts."
     )
     @APIResponses({
             @APIResponse( responseCode = "200", description = "Contacts retrieved successfully!",
@@ -98,7 +98,7 @@ public class ContactResource {
             @APIResponse( responseCode = "400", description = "Invalid pagination parameters" )
     })
     @GET
-    @RolesAllowed("user")
+    @RolesAllowed({"user", "read-contacts"})
     @Produces(MediaType.APPLICATION_JSON)
     public PaginatedResponse<ContactResponse> getAllContacts(@Parameter(description = "Zero-based page number", example = "0")  @QueryParam("page") @DefaultValue("0") int page,
                                                              @Parameter(description = "Number of contacts per page. Must be between 1 and 100", example = "20") @QueryParam("size") @DefaultValue("20") int size,
@@ -142,17 +142,6 @@ public class ContactResource {
     public Response deleteContact(@PathParam("id") Long id){
         contactService.deleteContact(id);
         return Response.noContent().build();
-    }
-
-    @GET
-    @Path("/reporter")
-    @RolesAllowed("read-contacts")
-    public PaginatedResponse<ContactResponse> getContactsReporter(
-            @QueryParam("page") @DefaultValue("0") int page,
-            @QueryParam("size") @DefaultValue("20") int size,
-            @QueryParam("groupId") Long groupId) {
-        paginationValidator.validate(page, size);
-        return contactService.getAllContactsForReporter(page, size, groupId);
     }
 
 }

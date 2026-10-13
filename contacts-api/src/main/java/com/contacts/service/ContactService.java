@@ -51,16 +51,7 @@ public class ContactService {
         contact.setOwner(owner);
         contactRepository.persist(contact);
 
-        ContactResponse contactResponse= new ContactResponse();
-        contactResponse.setId(contact.getId());
-        contactResponse.setFirstName(contact.getFirstName());
-        contactResponse.setLastName(contact.getLastName());
-        contactResponse.setEmail(contact.getEmail());
-        contactResponse.setPhone(contact.getPhone());
-        contactResponse.setGroupId((contactGroup != null ? contactGroup.getId() : null));
-        contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
-
-        return contactResponse;
+        return toResponse(contact);
     }
 
     public ContactResponse getContactById(Long id){
@@ -79,16 +70,7 @@ public class ContactService {
             throw new NotFoundException("Contact with id:" + id + " not found");
         }
 
-        ContactResponse contactResponse=new ContactResponse();
-        contactResponse.setId(contact.getId());
-        contactResponse.setFirstName(contact.getFirstName());
-        contactResponse.setLastName(contact.getLastName());
-        contactResponse.setEmail(contact.getEmail());
-        contactResponse.setPhone(contact.getPhone());
-        contactResponse.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
-        contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
-
-        return contactResponse;
+        return toResponse(contact);
     }
 
     public PaginatedResponse<ContactResponse> getAllContacts(int page, int size, Long groupId){
@@ -99,7 +81,8 @@ public class ContactService {
         }
         PanacheQuery<Contact> query;
         String owner= jwt.getSubject();
-        if(securityIdentity.hasRole("admin")) {
+        //Administrators and the reporting service account (read-contacts) may read all contacts
+        if(securityIdentity.hasRole("admin") || securityIdentity.hasRole("read-contacts")) {
             if (groupId == null) {
                 query = contactRepository.findAll();
             } else {
@@ -116,31 +99,8 @@ public class ContactService {
                 );
             }
         }
-        List<Contact> contactsList = query.page(page, size).list();
-        long totalElements = query.count();
-        int totalPages = (int) Math.ceil((double) totalElements / size);
 
-        List<ContactResponse> contactResponseList=new ArrayList<ContactResponse>();
-        for(Contact contact: contactsList){
-            ContactResponse contactResponse=new ContactResponse();
-            contactResponse.setId(contact.getId());
-            contactResponse.setFirstName(contact.getFirstName());
-            contactResponse.setLastName(contact.getLastName());
-            contactResponse.setEmail(contact.getEmail());
-            contactResponse.setPhone(contact.getPhone());
-            contactResponse.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
-            contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
-            contactResponseList.add(contactResponse);
-        }
-
-        PaginatedResponse<ContactResponse> response = new PaginatedResponse<>();
-        response.setContent(contactResponseList);
-        response.setPage(page);
-        response.setSize(size);
-        response.setTotalElements(totalElements);
-        response.setTotalPages(totalPages);
-
-        return response;
+        return toPaginatedResponse(query, page, size);
     }
 
     @Transactional
@@ -172,16 +132,7 @@ public class ContactService {
         }
         contact.setContactGroup(contactGroup);
 
-        ContactResponse contactResponse=new ContactResponse();
-        contactResponse.setId(contact.getId());
-        contactResponse.setFirstName(contact.getFirstName());
-        contactResponse.setLastName(contact.getLastName());
-        contactResponse.setEmail(contact.getEmail());
-        contactResponse.setPhone(contact.getPhone());
-        contactResponse.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
-        contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
-
-        return contactResponse;
+        return toResponse(contact);
     }
 
     @Transactional
@@ -222,56 +173,18 @@ public class ContactService {
                     owner
             );
         }
-        List<Contact> contactsList= query.page(page, size).list();
-        long totalElements = query.count();
-        int totalPages = (int) Math.ceil((double) totalElements / size);
 
-        List<ContactResponse> contactResponseList = new ArrayList<ContactResponse>();
-        for(Contact contact:contactsList){
-            ContactResponse contactResponse=new ContactResponse();
-            contactResponse.setId(contact.getId());
-            contactResponse.setFirstName(contact.getFirstName());
-            contactResponse.setLastName(contact.getLastName());
-            contactResponse.setEmail(contact.getEmail());
-            contactResponse.setPhone(contact.getPhone());
-            contactResponse.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
-            contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
-            contactResponseList.add(contactResponse);
-        }
-
-        PaginatedResponse<ContactResponse> response=new PaginatedResponse<>();
-        response.setContent(contactResponseList);
-        response.setPage(page);
-        response.setSize(size);
-        response.setTotalElements(totalElements);
-        response.setTotalPages(totalPages);
-
-        return response;
+        return toPaginatedResponse(query, page, size);
     }
 
-    public PaginatedResponse<ContactResponse> getAllContactsForReporter(int page, int size, Long groupId) {
-        PanacheQuery<Contact> query;
-        if (groupId == null) {
-            query = contactRepository.findAll();
-        } else {
-            query = contactRepository.findByGroupId(groupId);
-        }
-
+    private PaginatedResponse<ContactResponse> toPaginatedResponse(PanacheQuery<Contact> query, int page, int size){
         List<Contact> contactsList = query.page(page, size).list();
         long totalElements = query.count();
         int totalPages = (int) Math.ceil((double) totalElements / size);
 
         List<ContactResponse> contactResponseList = new ArrayList<ContactResponse>();
-        for (Contact contact : contactsList) {
-            ContactResponse response = new ContactResponse();
-            response.setId(contact.getId());
-            response.setFirstName(contact.getFirstName());
-            response.setLastName(contact.getLastName());
-            response.setEmail(contact.getEmail());
-            response.setPhone(contact.getPhone());
-            response.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
-            response.setCreatedTimestamp(contact.getCreatedTimestamp());
-            contactResponseList.add(response);
+        for(Contact contact: contactsList){
+            contactResponseList.add(toResponse(contact));
         }
 
         PaginatedResponse<ContactResponse> response = new PaginatedResponse<>();
@@ -282,6 +195,19 @@ public class ContactService {
         response.setTotalPages(totalPages);
 
         return response;
+    }
+
+    private ContactResponse toResponse(Contact contact){
+        ContactResponse contactResponse = new ContactResponse();
+        contactResponse.setId(contact.getId());
+        contactResponse.setFirstName(contact.getFirstName());
+        contactResponse.setLastName(contact.getLastName());
+        contactResponse.setEmail(contact.getEmail());
+        contactResponse.setPhone(contact.getPhone());
+        contactResponse.setGroupId(contact.getContactGroup() != null ? contact.getContactGroup().getId() : null);
+        contactResponse.setCreatedTimestamp(contact.getCreatedTimestamp());
+
+        return contactResponse;
     }
 
 }

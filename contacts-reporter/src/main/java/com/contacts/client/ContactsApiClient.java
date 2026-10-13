@@ -14,7 +14,6 @@ import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 public interface ContactsApiClient {
 
     @GET
-    @Path("/reporter")
     PaginatedResponse<ContactResponse> getContacts(
             @QueryParam("page") int page,
             @QueryParam("size") int size

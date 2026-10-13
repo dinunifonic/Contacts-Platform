@@ -15,6 +15,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasItem;
 
 @QuarkusTest
 public class ContactResourceTest {
@@ -424,23 +425,40 @@ public class ContactResourceTest {
     }
 
     @Test
-    void getContactsReporter_withoutAuthentication_shouldReturn401() {
+    @TestSecurity(user = "service-account-contacts-reporter", roles = {"read-contacts"})
+    @OidcSecurity(claims = {
+            @Claim(key = "sub", value = "service-account-contacts-reporter")
+    })
+    void getAllContacts_withReadContactsRole_shouldSeeOtherUsersContacts() {
+        persistContactOwnedBy("user-a", "visible.to.reporter@test.com");
+
         RestAssured.given()
+                .queryParam("size", 100)
                 .when()
-                .get("/api/v1/contacts/reporter")
+                .get("/api/v1/contacts")
                 .then()
-                .statusCode(401);
+                .statusCode(200)
+                .body("content.email", hasItem("visible.to.reporter@test.com"));
     }
 
     @Test
-    @TestSecurity(user = "test-user", roles = {"user"})
+    @TestSecurity(user = "service-account-contacts-reporter", roles = {"read-contacts"})
     @OidcSecurity(claims = {
-            @Claim(key = "sub", value = "test-user")
+            @Claim(key = "sub", value = "service-account-contacts-reporter")
     })
-    void getContactsReporter_asRegularUser_shouldReturn403() {
+    void createContact_withReadContactsRole_shouldReturn403() {
         RestAssured.given()
+                .contentType("application/json")
+                .body("""
+                {
+                  "firstName": "Dina",
+                  "lastName": "Ismail",
+                  "email": "reporter.cannot.create@test.com",
+                  "phone": "01116787399"
+                }
+                """)
                 .when()
-                .get("/api/v1/contacts/reporter")
+                .post("/api/v1/contacts")
                 .then()
                 .statusCode(403);
     }
@@ -450,26 +468,37 @@ public class ContactResourceTest {
     @OidcSecurity(claims = {
             @Claim(key = "sub", value = "service-account-contacts-reporter")
     })
-    void getContactsReporter_withReadContactsRole_shouldReturn200() {
+    void getContactById_withReadContactsRole_shouldReturn403() {
         RestAssured.given()
                 .when()
-                .get("/api/v1/contacts/reporter")
+                .get("/api/v1/contacts/1")
                 .then()
-                .statusCode(200);
+                .statusCode(403);
     }
 
     @Test
-    @TestSecurity(user = "service-account-contacts-reporter", roles = {"read-contacts"})
+    @TestSecurity(user = "test-user", roles = {"user"})
     @OidcSecurity(claims = {
-            @Claim(key = "sub", value = "service-account-contacts-reporter")
+            @Claim(key = "sub", value = "test-user")
     })
-    void getContactsReporter_withInvalidPagination_shouldReturn400() {
+    void createContact_withMalformedJson_shouldReturn400() {
         RestAssured.given()
-                .queryParam("size", 0)
+                .contentType("application/json")
+                .body("{ \"firstName\": ")
                 .when()
-                .get("/api/v1/contacts/reporter")
+                .post("/api/v1/contacts")
                 .then()
-                .statusCode(400);
+                .statusCode(400)
+                .contentType("application/problem+json");
+    }
+
+    @Test
+    void unknownPath_shouldReturn404() {
+        RestAssured.given()
+                .when()
+                .get("/api/v1/does-not-exist")
+                .then()
+                .statusCode(404);
     }
 
     private Integer createContact(String email) {
