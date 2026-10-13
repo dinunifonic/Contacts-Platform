@@ -15,4 +15,22 @@
         <module>contacts-reporter</module>
     </modules>
 
+    <properties>
+        <quarkus.platform.version>3.39.5</quarkus.platform.version>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+<!--    <dependencyManagement>-->
+<!--        <dependencies>-->
+<!--            <dependency>-->
+<!--                <groupId>io.quarkus.platform</groupId>-->
+<!--                <artifactId>quarkus-bom</artifactId>-->
+<!--                <version>${quarkus.platform.version}</version>-->
+<!--                <type>pom</type>-->
+<!--                <scope>import</scope>-->
+<!--            </dependency>-->
+<!--        </dependencies>-->
+<!--    </dependencyManagement>-->
+
 </project>

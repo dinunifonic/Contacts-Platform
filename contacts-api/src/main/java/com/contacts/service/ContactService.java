@@ -36,8 +36,12 @@ public class ContactService {
     public ContactResponse createContact(ContactRequest contactRequest){
         String owner = jwt.getSubject();
         ContactGroup contactGroup= null;
-        if (contactRequest.getGroupId()!=null)
-            contactGroup= contactGroupRepository.findById(contactRequest.getGroupId());
+        if (contactRequest.getGroupId()!=null) {
+            contactGroup = contactGroupRepository.findById(contactRequest.getGroupId());
+            if (contactGroup == null) {
+                throw new NotFoundException("Contact group with id:" + contactRequest.getGroupId() + " not found");
+            }
+        }
         Contact contact= new Contact();
         contact.setFirstName(contactRequest.getFirstName());
         contact.setLastName(contactRequest.getLastName());
@@ -88,6 +92,11 @@ public class ContactService {
     }
 
     public PaginatedResponse<ContactResponse> getAllContacts(int page, int size, Long groupId){
+        if (groupId != null && contactGroupRepository.findById(groupId) == null) {
+            throw new NotFoundException(
+                    "Contact Group with id:" + groupId + " not found"
+            );
+        }
         PanacheQuery<Contact> query;
         String owner= jwt.getSubject();
         if(securityIdentity.hasRole("admin")) {
@@ -155,8 +164,12 @@ public class ContactService {
         contact.setEmail(contactRequest.getEmail());
         contact.setPhone(contactRequest.getPhone());
         ContactGroup contactGroup=null;
-        if (contactRequest.getGroupId()!=null)
-            contactGroup= contactGroupRepository.findById(contactRequest.getGroupId());
+        if (contactRequest.getGroupId()!=null) {
+            contactGroup = contactGroupRepository.findById(contactRequest.getGroupId());
+            if (contactGroup == null) {
+                throw new NotFoundException("Contact group with id:" + contactRequest.getGroupId() + " not found");
+            }
+        }
         contact.setContactGroup(contactGroup);
 
         ContactResponse contactResponse=new ContactResponse();
@@ -172,8 +185,19 @@ public class ContactService {
     }
 
     @Transactional
-    public void deleteContact(Long id){
-        Contact contact= contactRepository.findById(id);
+    public void deleteContact(Long id) {
+        Contact contact;
+        String owner = jwt.getSubject();
+
+        if (securityIdentity.hasRole("admin")) {
+            contact = contactRepository.findById(id);
+        } else {
+            contact = contactRepository.find(
+                    "id = ?1 and owner = ?2",
+                    id,
+                    owner
+            ).firstResult();
+        }
         if (contact == null) {
             throw new NotFoundException("Contact with id:" + id + " not found");
         }

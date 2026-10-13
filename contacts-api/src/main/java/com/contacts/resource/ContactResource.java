@@ -151,11 +151,7 @@ public class ContactResource {
             @QueryParam("page") @DefaultValue("0") int page,
             @QueryParam("size") @DefaultValue("20") int size,
             @QueryParam("groupId") Long groupId) {
-
-        if (page < 0 || size <= 0) {
-            throw new BadRequestException("Page must be non-negative and size must be positive");
-        }
-
+        paginationValidator.validate(page, size);
         return contactService.getAllContactsForReporter(page, size, groupId);
     }
 

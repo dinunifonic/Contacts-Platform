@@ -75,7 +75,7 @@ public class ContactGroupResource {
     public Response createContactGroup(@Valid ContactGroupRequest contactGroupRequest){
         ContactGroupResponse contactGroupResponse= contactGroupService.createContactGroup(contactGroupRequest);
         return Response.status(Response.Status.CREATED)
-                .header("Location", "/api/v1/contacts/" + contactGroupResponse.getId())
+                .header("Location", "/api/v1/groups/" + contactGroupResponse.getId())
                 .entity(contactGroupResponse)
                 .build();
     }
