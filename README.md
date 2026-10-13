@@ -133,11 +133,9 @@ Versioning is included in the URL so that future API versions can be introduced 
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/v1/contacts/reporter` | Return paginated contacts for authorized reporting clients |
-| GET | `/reporters/contacts` | Return reporting data through `contacts-reporter` |
 | GET | `/reporters/contacts/count` | Return the total number of contacts through `contacts-reporter` |
 
-The reporter endpoint calls the API reporting endpoint and returns its response. It does not query the database directly.
+The reporter endpoint calls `GET /api/v1/contacts` as the reporting service account (`read-contacts` role) and returns a derived count. It does not query the database directly.
 
 ## API Standards
 
@@ -272,11 +270,14 @@ The main error cases are:
 | Invalid request / validation failure | `400 Bad Request` |
 | Resource not found | `404 Not Found` |
 | Duplicate unique value | `409 Conflict` |
+| Framework errors, such as an unknown URL or malformed JSON | The status of the original `WebApplicationException`, for example `404` or `400` |
 | Unexpected server error | `500 Internal Server Error` |
 
 A duplicate email or group name is returned as `409 Conflict`.
 
 Raw database constraint error messages are not exposed to API clients.
+
+For unexpected `500` errors, the real exception is written to the server log, while the caller only receives a generic message (`An unexpected error occurred`). Internal details such as class names or SQL are never sent to the caller.
 
 ## Data Model
 
@@ -549,10 +550,10 @@ Every test follows the Arrange / Act / Assert (AAA) structure and is named as a 
 |---|---|---|---|
 | `contacts-api` | `ContactServiceTest` | Unit | Contact business logic, owner rules, admin access, paging maths, missing groups |
 | `contacts-api` | `ContactGroupServiceTest` | Unit | Group business logic, paging maths, unassigning contacts before deleting a group |
-| `contacts-api` | `ContactResourceTest` | Integration | Contact endpoints: happy path, invalid input, not found, duplicate, security, reporter endpoint |
+| `contacts-api` | `ContactResourceTest` | Integration | Contact endpoints: happy path, invalid input, not found, duplicate, security, `read-contacts` access, malformed JSON and unknown paths |
 | `contacts-api` | `ContactGroupResourceTest` | Integration | Group endpoints: happy path, invalid input, not found, duplicate, security, contacts of a group |
 | `contacts-reporter` | `ContactReporterServiceTest` | Unit | Total contacts derived from the API response |
-| `contacts-reporter` | `ContactReporterResourceTest` | Integration | Reporter endpoints with a mocked `ContactsApiClient` |
+| `contacts-reporter` | `ContactReporterResourceTest` | Integration | Reporter count endpoint with a mocked `ContactsApiClient`, and that the raw contact list is not exposed |
 
 At least one parameterised test (`@ParameterizedTest`) is included, for example invalid pagination values and different contact names.
 
@@ -578,8 +579,8 @@ Security is tested with `@TestSecurity` and `@OidcSecurity` from `quarkus-test-s
 | No token | `401 Unauthorized` |
 | Wrong role, for example a `user` deleting a contact | `403 Forbidden` |
 | Correct role, for example an `admin` deleting a contact | `204 No Content` |
-| `user` calling the reporter endpoint | `403 Forbidden` |
-| `read-contacts` calling the reporter endpoint | `200 OK` |
+| `read-contacts` listing contacts | `200 OK`, including other users' contacts |
+| `read-contacts` creating a contact or reading a single contact | `403 Forbidden` |
 
 Data isolation is tested with two different users: a contact owned by `user-a` returns `404 Not Found` for `user-b`, while an `admin` can still read it.
 
@@ -673,7 +674,8 @@ Writing the tests revealed real bugs, which were then fixed:
 | Bug | Found by |
 |---|---|
 | `POST /api/v1/groups` returned a `Location` header pointing to `/api/v1/contacts/{id}` | `createContactGroup_shouldReturn201WithLocationHeader` |
-| `GET /api/v1/contacts/reporter?size=0` returned `500` instead of `400` | `getContactsReporter_withInvalidPagination_shouldReturn400` |
+| `GET /api/v1/contacts/reporter?size=0` returned `500` instead of `400` (this endpoint was later removed) | `getContactsReporter_withInvalidPagination_shouldReturn400` |
+| Unknown URLs and malformed JSON returned `500`, because the exception mapper caught framework exceptions | `unknownPath_shouldReturn404`, `createContact_withMalformedJson_shouldReturn400` |
 
 ### Testing Design Decisions
 
@@ -852,6 +854,24 @@ A `ContactGroup` can therefore contain multiple contacts, while each contact can
 
 The database enforces the relationship through a foreign key.
 
+The association uses `fetch = FetchType.LAZY`. With the default eager fetching, listing contacts loaded each contact's group with an extra query (one query for the list plus one per contact). The API only needs the group ID, which Hibernate can read without loading the group.
+
+### Owner Index
+
+Every query made by an ordinary user filters on `owner`. The `V3__add_contact_owner_index.sql` migration adds an index on this column so these queries do not scan the whole table.
+
+### Validation Location
+
+Bean Validation annotations are placed only on the request DTOs, because input is validated where it enters the API. The entities do not repeat these annotations. The database still enforces `NOT NULL` and `UNIQUE` constraints through the Flyway migrations.
+
+### Column Naming
+
+Column names use the Java field names in camelCase, for example `firstName` and `contactGroup_id`, instead of the more common MySQL `snake_case`. This is a known inconsistency. It was kept on purpose, because renaming would require a migration that renames existing columns plus a Hibernate naming strategy, which carries more risk than benefit at this stage.
+
+### Production Configuration
+
+Development and tests use Dev Services, so no database connection is configured for them. In the `prod` profile, the database URL, username and password are read from the `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` environment variables, so no credentials are stored in the repository.
+
 ## API Contract
 
 The exported OpenAPI contract is committed to the repository and represents the API contract independently of the implementation.
@@ -994,29 +1014,25 @@ This avoids implementing token retrieval and bearer-header propagation separatel
 
 ### Reporting Endpoints
 
-The API exposes a dedicated endpoint for authorized reporting access:
+The reporter calls the normal contacts endpoint of the API:
 
 ```text
-GET /api/v1/contacts/reporter?page=0&size=20
+GET /api/v1/contacts?page=0&size=1
 ```
 
-It requires the `read-contacts` role. Keeping reporting access on a separate endpoint avoids weakening the existing user-ownership rules for ordinary contact endpoints.
+This endpoint accepts the `user` and `read-contacts` roles. Ordinary users only see their own contacts. Administrators and the reporting service account (`read-contacts`) may read all contacts. The service account receives a role on the existing API rather than a separate private endpoint, so there is only one implementation of listing, paging and validation.
 
-The reporter exposes:
+The `read-contacts` role only grants reading the contact list. It cannot create, update, delete or read single contacts, which is covered by tests.
 
-```text
-GET http://localhost:8082/reporters/contacts
-```
-
-It calls the API and returns the paginated response. The reporter does not have its own database.
-
-The reporter also exposes a derived value:
+The reporter exposes a derived value:
 
 ```text
 GET http://localhost:8082/reporters/contacts/count
 ```
 
-`ContactReporterService` requests a single page of size `1` from the API and returns its `totalElements`, because only the total is needed, not the contacts themselves.
+`ContactReporterService` requests a single page of size `1` from the API and returns its `totalElements`, because only the total is needed, not the contacts themselves. The reporter does not have its own database.
+
+The reporter deliberately does not expose the raw contact list. Its own endpoints are not secured, so returning contacts would give every owner's personal data to anyone who can reach the reporter. Only an aggregate number leaves the reporter.
 
 ### Failure-Case Testing
 
@@ -1043,7 +1059,8 @@ The expiry check verifies that expired access tokens are not accepted. The repor
 * **Quarkus OIDC client:** token acquisition is delegated to the Quarkus OIDC client implementation.
 * **REST client token filter:** `@OidcClientFilter` propagates the service token on outgoing requests.
 * **Dedicated reporting role:** `read-contacts` grants the reporter the permissions required for reporting without granting it administrator access.
-* **Separate reporting endpoint:** reporting access is isolated from normal user-owned contact operations.
+* **Role on the normal endpoint instead of a separate one:** the service account reads through `GET /api/v1/contacts` with the `read-contacts` role. An earlier version used a separate `/api/v1/contacts/reporter` endpoint; it duplicated the listing logic and validated pagination differently, so it was removed.
+* **No raw data from the reporter:** the reporter only returns a derived count, so personal data is not re-exposed through a second service.
 * **Audience validation:** the token must be intended for `contacts-api`, not merely validly issued by Keycloak.
 * **Issuer validation:** tokens must originate from the configured `contacts` realm.
 * **Environment-based secret configuration:** the secret can be changed without editing or committing source code.
@@ -1069,7 +1086,7 @@ The current local development setup uses these ports:
 Open the reporter endpoint:
 
 ```text
-http://localhost:8082/reporters/contacts
+http://localhost:8082/reporters/contacts/count
 ```
 
 A successful response demonstrates that the reporter can obtain a service token, call the API, and return its data without a user logging in.

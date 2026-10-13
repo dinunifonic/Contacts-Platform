@@ -1,11 +1,13 @@
 package com.contacts.exception;
 
 import jakarta.validation.ConstraintViolationException;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
+import org.jboss.logging.Logger;
 
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.stream.Collectors;
@@ -14,6 +16,8 @@ import java.util.stream.Collectors;
 //Provides special REST behavior
 @Provider
 public class SingleExceptionMapper implements ExceptionMapper<Exception> {
+
+    private static final Logger LOG = Logger.getLogger(SingleExceptionMapper.class);
 
     @Context
     UriInfo uriInfo;
@@ -48,12 +52,24 @@ public class SingleExceptionMapper implements ExceptionMapper<Exception> {
         } else if (isDuplicate) {
                 statusCode = 409;
                 title = "Conflict: Duplicate Entry";
+
+        } else if (exception instanceof WebApplicationException webApplicationException) {
+            statusCode = webApplicationException.getResponse().getStatus();
+            title = Response.Status.fromStatusCode(statusCode) != null
+                    ? Response.Status.fromStatusCode(statusCode).getReasonPhrase()
+                    : "Error";
+
         } else{
             statusCode = 500;
             title = "Internal Server Error";
         }
 
         String detail = exception.getMessage();
+        if (statusCode == 500) {
+            //Log the real cause for diagnosis, but never send internals to the caller
+            LOG.errorf(exception, "Unexpected error on %s", uriInfo.getRequestUri().getPath());
+            detail = "An unexpected error occurred";
+        }
         if (exception instanceof ConstraintViolationException constraintViolationException) {
             detail = constraintViolationException.getConstraintViolations()
                     .stream()

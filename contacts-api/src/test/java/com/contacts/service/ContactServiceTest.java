@@ -534,7 +534,7 @@ public class ContactServiceTest {
     }
 
     @Test
-    void getAllContactsForReporter_shouldReturnAllContacts() {
+    void getAllContacts_shouldAllowReadContactsRoleToSeeAllContacts() {
         Contact contact = new Contact();
         contact.setId(1L);
         contact.setFirstName("Dina");
@@ -542,48 +542,21 @@ public class ContactServiceTest {
         contact.setEmail("dina@test.com");
         contact.setPhone("01118654233");
         contact.setOwner("user-123");
+        when(jwt.getSubject()).thenReturn("service-account-contacts-reporter");
+        when(securityIdentity.hasRole("admin")).thenReturn(false);
+        when(securityIdentity.hasRole("read-contacts")).thenReturn(true);
         PanacheQuery<Contact> query = mock(PanacheQuery.class);
         when(contactRepository.findAll()).thenReturn(query);
         when(query.page(0, 10)).thenReturn(query);
         when(query.list()).thenReturn(List.of(contact));
         when(query.count()).thenReturn(1L);
 
-        PaginatedResponse<ContactResponse> response = contactService.getAllContactsForReporter(0, 10, null);
+        PaginatedResponse<ContactResponse> response = contactService.getAllContacts(0, 10, null);
 
         assertEquals(1, response.getContent().size());
-        assertEquals(1L, response.getContent().get(0).getId());
         assertEquals("Dina", response.getContent().get(0).getFirstName());
-        assertEquals(1L, response.getTotalElements());
-        assertEquals(1, response.getTotalPages());
-        assertEquals(0, response.getPage());
-        assertEquals(10, response.getSize());
         verify(contactRepository).findAll();
-    }
-
-    @Test
-    void getAllContactsForReporter_shouldFilterByGroup() {
-        ContactGroup group = new ContactGroup();
-        group.setId(5L);
-        Contact contact = new Contact();
-        contact.setId(1L);
-        contact.setFirstName("Dina");
-        contact.setLastName("Ismail");
-        contact.setEmail("dina@test.com");
-        contact.setPhone("01118843255");
-        contact.setContactGroup(group);
-        PanacheQuery<Contact> query = mock(PanacheQuery.class);
-        when(contactRepository.findByGroupId(5L)).thenReturn(query);
-        when(query.page(0, 10)).thenReturn(query);
-        when(query.list()).thenReturn(List.of(contact));
-        when(query.count()).thenReturn(1L);
-
-        PaginatedResponse<ContactResponse> response = contactService.getAllContactsForReporter(0, 10, 5L);
-
-        assertEquals(1, response.getContent().size());
-        assertEquals(1L, response.getContent().get(0).getId());
-        assertEquals(5L, response.getContent().get(0).getGroupId());
-        assertEquals(1L, response.getTotalElements());
-        verify(contactRepository).findByGroupId(5L);
+        verify(contactRepository, never()).find("owner", "service-account-contacts-reporter");
     }
 
     @Test
