@@ -5,6 +5,7 @@ import com.contacts.dto.ContactResponse;
 import com.contacts.dto.PaginatedResponse;
 import com.contacts.entity.Contact;
 import com.contacts.entity.ContactGroup;
+import com.contacts.event.ContactEventPublisher;
 import com.contacts.exception.NotFoundException;
 import com.contacts.repository.ContactGroupRepository;
 import com.contacts.repository.ContactRepository;
@@ -41,6 +42,9 @@ public class ContactServiceTest {
 
     @Mock
     SecurityIdentity securityIdentity;
+
+    @Mock
+    ContactEventPublisher contactEventPublisher;
 
     @InjectMocks
     ContactService contactService;
