@@ -1179,3 +1179,86 @@ http://localhost:8082/reporters/contacts/count
 ```
 
 A successful response demonstrates that the reporter can obtain a service token, call the API, and return its data without a user logging in.
+
+## RabbitMQ Messaging
+
+### Architecture
+
+The Contacts Platform uses RabbitMQ to publish contact-created events from `contacts-api` and consume them in `contacts-reporter`.
+
+- **Exchange:** `contacts.events`
+- **Exchange type:** `topic`
+- **Routing key:** `contact.created`
+- **Reporter queue:** `contacts-reporter.contact-created`
+- **Dead-letter exchange:** `contacts.events.dlx`
+- **Dead-letter queue:** `contacts-reporter.contact-created.dlq`
+
+The topic exchange was chosen because it supports routing by event type and allows future consumers to subscribe to additional contact events using routing-key patterns.
+
+RabbitMQ Dev Services provides a broker automatically during Quarkus development, so a separate broker setup is not required for local development.
+
+### Event payload and tracing
+
+Each `ContactCreatedEvent` contains:
+
+- `eventId` — unique identifier for the event.
+- `correlationId` — identifier used to trace the originating action across services.
+- `contactId` — identifier of the created contact.
+- `occurredAt` — event creation timestamp.
+
+The reporter logs the event ID, correlation ID, and contact ID to make message processing observable and help trace an event across services.
+
+### Exchanges, queues, bindings, and routing keys
+
+- **Exchange:** receives published messages and routes them according to its type and bindings.
+- **Queue:** stores messages until they are consumed and acknowledged or rejected.
+- **Binding:** connects a queue to an exchange using a routing key or pattern.
+- **Routing key:** identifies the event type. The current key is `contact.created`.
+- **Topic exchange:** supports pattern-based routing. For example, `contact.*` matches a single word after `contact`, while `contact.#` can match multiple words.
+
+### Work queues and publish/subscribe
+
+In a **work queue**, multiple consumers can compete to process messages from the same queue. Each message is normally handled by one consumer.
+
+In **publish/subscribe**, each subscriber has its own queue bound to the exchange. Each queue can receive a copy of every matching event, allowing independent services to react to the same event.
+
+The topic exchange supports adding more event types and subscribers in the future.
+
+### Acknowledgements and prefetch
+
+Acknowledgements tell RabbitMQ that a message has been processed successfully and can be removed from the queue. If processing fails, the configured `reject` failure strategy rejects the message without requeueing it.
+
+The reporter configures:
+
+`mp.messaging.incoming.contact-created-in.max-outstanding-messages=1`
+
+This limits outstanding messages to one and is used to control the consumer's in-flight workload.
+
+### Consumer failure and redelivery
+
+If a consumer connection is lost while a message remains unacknowledged, RabbitMQ can requeue the message and deliver it again when a consumer becomes available.
+
+This behavior was tested by pausing event processing, stopping `contacts-reporter` before processing completed, and restarting it. The same `eventId` appeared again, and processing subsequently finished successfully.
+
+This demonstrates at-least-once delivery behavior: the same event may be delivered more than once. Consumers should therefore be designed to handle duplicate events safely.
+
+### Bounded retries and dead-letter queue
+
+The reporter implements four application-level processing attempts: one initial attempt and up to three retries. These retries happen immediately within the same delivery; they are not four separate RabbitMQ redeliveries.
+
+If all four attempts fail, the exception propagates to SmallRye Reactive Messaging. The configured `reject` failure strategy rejects the message, and RabbitMQ routes it to the dead-letter queue using the configured dead-letter exchange and routing key.
+
+The dead-letter queue retains failed messages for later inspection or recovery.
+
+### Verification
+
+The following behavior was tested:
+
+- Creating a contact publishes an event that the reporter receives and logs.
+- Event IDs and correlation IDs can be used to trace processing.
+- A simulated processing failure produces four application-level attempts for the same event ID.
+- After the final failed attempt, the message is rejected and appears in the dead-letter queue.
+- Two subsequent events are processed successfully while the dead-letter queue count remains unchanged.
+- Stopping the reporter during processing and restarting it results in the same event ID being delivered again and successfully processed.
+
+These tests demonstrate event publishing and consumption, routing, failure handling, bounded application-level retries, dead-lettering, and RabbitMQ redelivery after consumer disconnection.

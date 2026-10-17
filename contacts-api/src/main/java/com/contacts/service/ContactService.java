@@ -5,6 +5,8 @@ import com.contacts.dto.ContactResponse;
 import com.contacts.dto.PaginatedResponse;
 import com.contacts.entity.Contact;
 import com.contacts.entity.ContactGroup;
+import com.contacts.event.ContactCreatedEvent;
+import com.contacts.event.ContactEventPublisher;
 import com.contacts.exception.NotFoundException;
 import com.contacts.repository.ContactGroupRepository;
 import com.contacts.repository.ContactRepository;
@@ -15,8 +17,10 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @ApplicationScoped
 public class ContactService {
@@ -31,6 +35,9 @@ public class ContactService {
 
     @Inject
     SecurityIdentity securityIdentity;
+
+    @Inject
+    ContactEventPublisher contactEventPublisher;
 
     @Transactional
     public ContactResponse createContact(ContactRequest contactRequest){
@@ -50,6 +57,15 @@ public class ContactService {
         contact.setContactGroup(contactGroup);
         contact.setOwner(owner);
         contactRepository.persist(contact);
+
+        String correlationId = UUID.randomUUID().toString();
+        ContactCreatedEvent event = new ContactCreatedEvent(
+                UUID.randomUUID(),
+                correlationId,
+                contact.getId(),
+                Instant.now()
+        );
+        contactEventPublisher.publish(event);
 
         return toResponse(contact);
     }
