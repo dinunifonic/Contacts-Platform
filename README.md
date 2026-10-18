@@ -637,10 +637,13 @@ Every test follows the Arrange / Act / Assert (AAA) structure and is named as a 
 
 | Module | Test class | Type | Covers |
 |---|---|---|---|
-| `contacts-api` | `ContactServiceTest` | Unit | Contact business logic, owner rules, admin access, paging maths, missing groups |
+| `contacts-api` | `ContactServiceTest` | Unit | Contact business logic, owner rules, admin access, paging maths, missing groups, publishing a `ContactCreatedEvent` when a contact is created |
 | `contacts-api` | `ContactGroupServiceTest` | Unit | Group business logic, paging maths, unassigning contacts before deleting a group |
 | `contacts-api` | `ContactResourceTest` | Integration | Contact endpoints: happy path, invalid input, not found, duplicate, security, `read-contacts` access, malformed JSON and unknown paths |
 | `contacts-api` | `ContactGroupResourceTest` | Integration | Group endpoints: happy path, invalid input, not found, duplicate, security, contacts of a group |
+| `contacts-api` | `ContactEventPublisherTest` | Unit | Event sent to RabbitMQ and Kafka, contact ID used as the Kafka key |
+| `contacts-api` | `ContactEventPublisherKafkaTest` | Integration | Real Kafka broker: events of the same contact land in the same partition and arrive in publish order |
+| `contacts-reporter` | `ContactEventConsumerTest` | Unit | Idempotent consumer: duplicate events on either broker are processed only once |
 | `contacts-reporter` | `ContactReporterServiceTest` | Unit | Total contacts derived from the API response |
 | `contacts-reporter` | `ContactReporterResourceTest` | Integration | Reporter count endpoint with a mocked `ContactsApiClient`, and that the raw contact list is not exposed |
 
@@ -1262,3 +1265,199 @@ The following behavior was tested:
 - Stopping the reporter during processing and restarting it results in the same event ID being delivered again and successfully processed.
 
 These tests demonstrate event publishing and consumption, routing, failure handling, bounded application-level retries, dead-lettering, and RabbitMQ redelivery after consumer disconnection.
+
+## Event-Driven Architecture
+
+The Contacts Platform uses RabbitMQ and Apache Kafka to publish and consume contact-created events. When a contact is created, `contacts-api` publishes a `ContactCreatedEvent` to both brokers, and `contacts-reporter` consumes the event through the corresponding messaging channels.
+
+This allows the reporter to react to contact creation without making a direct REST call to the API for event notifications.
+
+### Event Payload
+
+The event is represented by `ContactCreatedEvent` and contains:
+
+| Field | Purpose |
+|---|---|
+| `eventId` | Unique UUID identifying the event and allowing duplicate deliveries to be recognized. |
+| `correlationId` | Identifier used to trace the originating action across application logs. |
+| `contactId` | ID of the created contact, allowing consumers to identify the affected resource. |
+| `occurredAt` | Timestamp indicating when the event occurred. |
+
+The event deliberately contains the contact ID rather than the complete contact entity. The reporter only needs to identify the event and observe its processing; sending the entire entity would expose additional personal data unnecessarily and couple the consumer to the API's entity structure.
+
+### Event Publishing
+
+`ContactEventPublisher` is responsible for publishing the event to both brokers.
+
+- RabbitMQ uses the `contact-created-out` channel.
+- Kafka uses the `contact-created-kafka-out` channel.
+- Both channels receive the same `ContactCreatedEvent`, including its event ID and correlation ID.
+
+The publisher combines the asynchronous publishing results using `CompletableFuture.allOf()`. This allows the caller to observe whether both publishing operations completed successfully or at least one failed.
+
+The Kafka message key is the contact ID converted to a string. This ensures that messages for the same contact are routed to the same partition under a stable partitioning configuration.
+
+### RabbitMQ
+
+RabbitMQ provides the first event-delivery channel between `contacts-api` and `contacts-reporter`.
+
+The existing RabbitMQ configuration uses a topic exchange and routing keys to route contact-created events to the reporter's queue. The dead-letter configuration and bounded processing retries allow messages that repeatedly fail processing to be moved to a dead-letter queue instead of being retried indefinitely.
+
+The reporter logs the event ID, correlation ID, contact ID, and processing outcome so that message handling is observable.
+
+### Kafka
+
+Kafka is implemented as a second publishing and consumption channel for the same contact-created event.
+
+The outgoing channel is configured as follows:
+
+```properties
+mp.messaging.outgoing.contact-created-kafka-out.connector=smallrye-kafka
+mp.messaging.outgoing.contact-created-kafka-out.topic=contacts.created
+mp.messaging.outgoing.contact-created-kafka-out.value.serializer=io.quarkus.kafka.client.serialization.ObjectMapperSerializer
+```
+
+The incoming channel is configured as follows:
+
+```properties
+mp.messaging.incoming.contact-created-kafka-in.connector=smallrye-kafka
+mp.messaging.incoming.contact-created-kafka-in.topic=contacts.created
+```
+
+The publisher adds `OutgoingKafkaRecordMetadata` to each Kafka message and sets the message key to the contact ID.
+
+#### Message Ordering
+
+Kafka guarantees ordering within a partition, not across all partitions in a topic.
+
+Using the contact ID as the key causes messages for the same contact to be assigned to the same partition, provided the partitioning configuration remains compatible. Kafka can then preserve their order within that partition.
+
+If a suitable key were omitted or changed inconsistently, events for the same contact could be assigned to different partitions. Their relative processing order would no longer be guaranteed.
+
+Dev Services creates the `contacts.created` topic with three partitions:
+
+```properties
+quarkus.kafka.devservices.topic-partitions."contacts.created"=3
+```
+
+With Kafka's default of a single partition, every record would land in partition `0` and stay in order regardless of the key, so the ordering tests would pass even with a missing or wrong key. Three partitions make the key relevant.
+
+The integration tests verify that multiple events for the same contact use the same partition and are received in publish order.
+
+#### At-Least-Once Delivery
+
+Kafka delivers records at least once, so the same event can reach the reporter more than once:
+
+* **Consumer side:** the reporter processes a record and then commits its offset. If the reporter crashes after processing but before the offset is committed, Kafka delivers the record again after the restart.
+* **Producer side:** if `contacts-api` does not receive the broker's acknowledgement in time, the producer can retry, and the record may be written twice.
+
+Kafka does not remove these duplicates for the consumer. Duplicates are therefore handled by the reporter, as described in [Consumer Idempotency](#consumer-idempotency).
+
+### Broker Choice
+
+The same event is published to both brokers so that both approaches can be compared. They are suited to different needs:
+
+| | RabbitMQ | Kafka |
+|---|---|---|
+| Model | Message queue: an exchange routes each message into queues | Log: records are appended to partitions of a topic |
+| After consumption | A message is removed from the queue once it is acknowledged | Records stay in the topic for the retention period and can be read again |
+| Ordering | Per queue, as long as there is a single consumer | Per partition; the key decides the partition, so per contact |
+| Routing | Flexible routing through exchange types, bindings and routing keys | Consumers subscribe to whole topics |
+| Failure handling | Built-in acknowledgements, rejection and dead-letter queues | Consumer offsets; retries and dead-letter topics are handled by the application or connector |
+| Multiple consumers | Competing consumers on one queue, or one queue per subscriber | Consumer groups; each group receives every record, instances in a group share the partitions |
+
+**RabbitMQ** fits task-style messages that must be processed once and then removed, where routing and dead-lettering of individual failed messages matter.
+
+**Kafka** fits an event stream that several services may read independently, where order per key matters and events should be replayable later.
+
+For the contact-created event, Kafka is the better long-term fit. It is a fact that other services may want to consume independently, order per contact matters, and keeping the events allows a new consumer to replay the history. RabbitMQ remains the simpler choice for the reporter's dead-letter handling, which is why both are demonstrated.
+
+### Consumer Idempotency
+
+Both messaging channels use the same `ContactEventConsumer` processing logic. The consumer tracks processed event IDs and ignores an event when its ID has already been processed.
+
+This is important because messaging systems can deliver the same logical event more than once. A duplicate delivery should not increment the processing count again.
+
+The current implementation uses an in-memory concurrent set:
+
+```
+private final Set<UUID> processedEventIds =
+        ConcurrentHashMap.newKeySet();
+
+private final AtomicInteger processedEventCount =
+        new AtomicInteger(0);
+```
+
+The event ID is added to the set before the processing count is incremented. If the ID is already present, the consumer logs the duplicate and returns without incrementing the count.
+
+This provides in-process duplicate suppression for the current demonstration. The set is not persistent, so deduplication state is lost when the application restarts and is not shared between multiple application replicas. A production implementation requiring durable idempotency would use persistent deduplication records and appropriate transaction handling.
+
+### Database Commit and Event Publishing Failure
+
+The database transaction and message publishing are separate operations in the current implementation.
+
+`ContactService.createContact()` is `@Transactional`. It saves the contact, calls `contactEventPublisher.publish(event)` and returns the response. It does not wait for the `CompletionStage` returned by `publish()`, and the transaction commits only after the method returns.
+
+**The database commit succeeds but publishing fails:**
+
+* The contact is saved.
+* The caller receives `201 Created`, because the service does not wait for the publishing result.
+* The event is lost for the broker that failed. The only trace is the `Failed to publish contact event` error logged by `ContactEventPublisher`, including the event ID.
+* The reporter never learns about this contact, and nothing retries the event later.
+
+**The event is published but the commit fails:**
+
+Because `publish()` is called before the transaction commits, the opposite can also happen. The event is sent, then the commit fails, for example because of a database error. The caller receives an error, but the reporter has already received an event for a contact that does not exist.
+
+In both cases the database and the event stream no longer agree, and the caller cannot see it.
+
+For a production system, the Transactional Outbox pattern would be a suitable improvement. The contact and an event record would be stored in the same database transaction. A separate publisher would send pending events to the brokers, retry failures, and record delivery progress. Consumers would still need idempotency because events could be delivered more than once.
+
+### Messaging Tests
+
+The following tests cover event publishing, Kafka ordering, and consumer idempotency.
+
+| Test class | Test | Purpose |
+|---|---|---|
+| `ContactServiceTest` | `createContact_shouldPublishContactCreatedEventForTheNewContact` | Verifies that contact creation publishes an event with the generated contact ID and a non-null event ID. |
+| `ContactEventPublisherTest` | `publish_shouldSendEventToRabbitMQAndKafka` | Verifies that the publisher sends the event to both messaging channels. |
+| `ContactEventPublisherTest` | `publish_shouldUseContactIdAsKafkaKey` | Verifies that the contact ID is used as the Kafka message key. |
+| `ContactEventPublisherKafkaTest` | `publish_shouldDeliverEventsOfTheSameContactToTheSamePartition` | Verifies that messages for the same contact use the same partition. |
+| `ContactEventPublisherKafkaTest` | `publish_shouldDeliverEventsOfTheSameContactInPublishOrder` | Verifies that events are received in publish order. |
+| `ContactEventConsumerTest` | `consumeFromKafka_shouldIgnoreDuplicateEvent` | Verifies that duplicate Kafka deliveries do not increase the processing count twice. |
+| `ContactEventConsumerTest` | `consume_shouldIgnoreDuplicateRabbitMQEvent` | Verifies duplicate suppression for RabbitMQ deliveries. |
+| `ContactEventConsumerTest` | `consumeFromRabbitMQAndKafka_shouldProcessSameEventOnlyOnce` | Verifies that the same event delivered through both brokers is processed once within the consumer instance. |
+| `ContactEventConsumerTest` | `consumeFromKafka_shouldProcessDifferentEventsForSameContact` | Verifies that different events for the same contact are both processed, so deduplication uses the event ID and not the contact ID. |
+| `ContactEventConsumerTest` | `consumeFromKafka_shouldNotThrowForDuplicateEvent` | Verifies that a duplicate is skipped without an exception, so it is acknowledged normally instead of being retried or dead-lettered. |
+
+#### Contact Creation Event Test
+
+The service unit test `createContact_shouldPublishContactCreatedEventForTheNewContact` verifies the connection between contact creation and event publishing.
+
+The test prepares a `ContactRequest`, mocks the authenticated user's subject, and configures the repository to assign an ID to the newly persisted contact. It then calls `createContact()` and captures the event passed to `ContactEventPublisher`.
+
+The assertions verify that:
+
+- The publisher is invoked.
+- The event contains the generated contact ID.
+- The event has a non-null event ID.
+
+This verifies that the service constructs and publishes an event for the newly created contact. It complements the publisher and consumer tests, which test the messaging behavior separately.
+
+#### Kafka Integration Testing
+
+`ContactEventPublisherKafkaTest` uses `@QuarkusTest` and `KafkaCompanionResource` to publish events to the actual Kafka broker used by the test environment and inspect the records received from the `contacts.created` topic.
+
+The test verifies partition assignment and event order using the contact ID as the message key.
+
+These tests provide integration-level evidence for Kafka publishing and ordering, while the consumer unit tests cover duplicate suppression. A separate end-to-end test that observes the reporter's Kafka consumer would provide additional evidence that the complete cross-application flow works.
+
+### Messaging Design Decisions
+
+- **Small event payload:** the event carries identifiers and a timestamp rather than the full contact entity, minimizing unnecessary data exposure and coupling.
+- **Event ID:** a UUID identifies a logical event independently of its delivery attempts.
+- **Correlation ID:** supports tracing a user action across the API and reporter logs.
+- **Same event on both brokers:** RabbitMQ and Kafka receive the same event data, allowing both messaging approaches to be demonstrated.
+- **Contact ID as Kafka key:** preserves per-contact ordering within a partition.
+- **Shared consumer deduplication logic:** both brokers use the same event-processing method, avoiding separate idempotency rules.
+- **In-memory deduplication for the demonstration:** keeps the implementation simple but does not provide durable or distributed deduplication.

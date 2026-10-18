@@ -5,6 +5,7 @@ import com.contacts.dto.ContactResponse;
 import com.contacts.dto.PaginatedResponse;
 import com.contacts.entity.Contact;
 import com.contacts.entity.ContactGroup;
+import com.contacts.event.ContactCreatedEvent;
 import com.contacts.event.ContactEventPublisher;
 import com.contacts.exception.NotFoundException;
 import com.contacts.repository.ContactGroupRepository;
@@ -111,6 +112,28 @@ public class ContactServiceTest {
         ArgumentCaptor<Contact> captor = ArgumentCaptor.forClass(Contact.class);
         verify(contactRepository).persist(captor.capture());
         assertNull(captor.getValue().getContactGroup());
+    }
+
+    @Test
+    void createContact_shouldPublishContactCreatedEventForTheNewContact() {
+        ContactRequest contactRequest= new ContactRequest();
+        contactRequest.setFirstName("Dina");
+        contactRequest.setLastName("Ismail");
+        contactRequest.setEmail("dismail@test.com");
+        contactRequest.setPhone("01209836228");
+        when(jwt.getSubject()).thenReturn("user-123");
+        doAnswer(invocation -> {
+            Contact contact = invocation.getArgument(0);
+            contact.setId(1L);
+            return null;
+        }).when(contactRepository).persist(any(Contact.class));
+
+        contactService.createContact(contactRequest);
+
+        ArgumentCaptor<ContactCreatedEvent> captor = ArgumentCaptor.forClass(ContactCreatedEvent.class);
+        verify(contactEventPublisher).publish(captor.capture());
+        assertEquals(1L, captor.getValue().getContactId());
+        assertNotNull(captor.getValue().getEventId());
     }
 
     @Test
