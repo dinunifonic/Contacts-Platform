@@ -27,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -670,5 +671,9 @@ public class ContactServiceTest {
 
         assertEquals(5L, response.getGroupId());
         assertEquals(5L, contact.getContactGroup().getId());
+    }
+    @Test
+    void ciMergeGateShouldFail() {
+        assertThat(true).isFalse();
     }
 }
