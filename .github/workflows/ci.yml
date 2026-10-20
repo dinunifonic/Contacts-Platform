@@ -27,3 +27,8 @@ jobs:
 
       - name: Build and run tests
         run: mvn --batch-mode --no-transfer-progress verify
+      - name: Build contacts-api image
+        run: docker build -f Dockerfile.api -t contacts-api:ci .
+
+      - name: Build contacts-reporter image
+        run: docker build -f Dockerfile.reporter -t contacts-reporter:ci .
