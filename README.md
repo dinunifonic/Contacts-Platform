@@ -1461,3 +1461,95 @@ These tests provide integration-level evidence for Kafka publishing and ordering
 - **Contact ID as Kafka key:** preserves per-contact ordering within a partition.
 - **Shared consumer deduplication logic:** both brokers use the same event-processing method, avoiding separate idempotency rules.
 - **In-memory deduplication for the demonstration:** keeps the implementation simple but does not provide durable or distributed deduplication.
+
+# CI/CD Documentation
+
+## 1. GitHub Actions CI Pipeline
+
+Created `.github/workflows/ci.yml` to automate the build, test, and Docker image verification process.
+
+The workflow runs on:
+- Pushes to `main`
+- Pull requests targeting `main`
+
+The pipeline:
+1. Checks out the repository.
+2. Sets up Java 21 using Temurin.
+3. Caches Maven dependencies.
+4. Runs `mvn --batch-mode --no-transfer-progress verify`.
+5. Builds the `contacts-api` Docker image.
+6. Builds the `contacts-reporter` Docker image.
+
+## 2. Automated Testing and Coverage
+
+Configured JaCoCo in both Quarkus modules to enforce a minimum of **80% line coverage** for the selected service and resource packages.
+
+The coverage check runs during Maven's `verify` phase. Both modules passed their tests and coverage checks. We also tested the enforcement mechanism by temporarily setting an unattainable threshold and confirming that the build failed.
+
+## 3. Branch Protection and Merge Gate
+
+Configured branch protection for `main` to require:
+- Pull requests before merging.
+- The `Build and test` GitHub Actions status check to pass.
+
+Verified the merge gate by creating a temporary pull request containing an intentionally failing test. CI failed as expected. The test was removed, CI passed again, and the temporary pull request was closed without merging.
+
+## 4. Docker Image Verification
+
+The CI workflow builds both application images using:
+- `Dockerfile.api`
+- `Dockerfile.reporter`
+
+Both image builds completed successfully in GitHub Actions.
+
+## 5. Docker Compose Clean-Start Verification
+
+Stopped and rebuilt the Docker Compose stack using:
+
+```powershell
+docker compose -f DockerCompose.yaml down
+docker compose -f DockerCompose.yaml up -d --build
+docker compose -f DockerCompose.yaml ps
+```
+
+All six services started successfully:
+- `contacts-api`
+- `contacts-reporter`
+- MySQL
+- Keycloak
+- RabbitMQ
+- Kafka
+
+MySQL, Keycloak, RabbitMQ, and Kafka reported healthy status. The named data volumes were preserved by not using the `-v` option with `docker compose down`.
+
+## 6. Runtime Verification
+
+- Confirmed that the Contacts API started in production mode.
+- Confirmed that all three Flyway migrations were validated and the database schema was up to date.
+- Confirmed that the API connected to Kafka and RabbitMQ.
+- Opened `/q/openapi` successfully and verified that the API specification lists the expected contacts and contact-group endpoints.
+- Verified the reporter-to-API request using `/reporters/contacts/count`.
+
+## 7. Service-to-Service Authentication Troubleshooting
+
+The reporter initially returned an HTTP 500 error because Keycloak rejected its client credentials with `unauthorized_client`.
+
+The issue was traced to a mismatch between `REPORTER_CLIENT_SECRET` in the local `.env` file and the secret configured for the reporter's Keycloak client.
+
+Updated the local environment variable to match the Keycloak client secret and recreated the reporter container. The reporter then successfully authenticated and called the Contacts API, returning a count of `0`.
+
+## 8. Secret and Git Hygiene
+
+Verified that `.env` is ignored by Git using:
+
+```powershell
+git check-ignore .env
+```
+
+The command returned `.env`, confirming that the ignore rule applies. Also confirmed that `git status --short` returned no changes on the current branch.
+
+**Security note:** The ignore rule prevents normal untracked-file additions, but it does not prove that `.env` was never committed in the past. If needed, check the Git history separately.
+
+## Final Result
+
+CI pipeline, coverage enforcement, Docker image builds, branch protection, merge-gate behavior, and Docker Compose clean-start verification were completed successfully. The reporter's Keycloak client-credentials authentication was also restored and verified at runtime.
