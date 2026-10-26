@@ -2,3 +2,5 @@
 *.iml
 target/
 .env
+#Realm exports that contain real client secrets - never commit
+keycloak/realm-export-old-users.json
