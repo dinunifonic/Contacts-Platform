@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contacts-reporter
+  namespace: contacts-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: contacts-reporter
+  template:
+    metadata:
+      labels:
+        app: contacts-reporter
+    spec:
+      containers:
+        - name: contacts-reporter
+          image: contacts-reporter:t3
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: contacts-reporter-config
+          env:
+            - name: REPORTER_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: reporter-client-secret
+                  key: REPORTER_CLIENT_SECRET
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: RABBITMQ_PASSWORD
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: contacts-reporter
+  namespace: contacts-platform
+spec:
+  selector:
+    app: contacts-reporter
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http
+  type: ClusterIP

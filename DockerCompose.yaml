@@ -90,7 +90,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    image: contacts-api:t1
+    image: contacts-api:t4
     environment:
       QUARKUS_PROFILE: prod
       DB_URL: jdbc:mysql://mysql:3306/contacts
@@ -120,7 +120,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.reporter
-    image: contacts-reporter:t1
+    image: contacts-reporter:t3
     environment:
       QUARKUS_PROFILE: prod
       QUARKUS_OIDC_CLIENT_AUTH_SERVER_URL: http://keycloak:8080/realms/contacts

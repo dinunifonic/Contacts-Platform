@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: contacts-api-config
+  namespace: contacts-platform
+data:
+  QUARKUS_PROFILE: "prod"
+  DB_URL: "jdbc:mysql://mysql:3306/contacts"
+  DB_USERNAME: "contacts"
+  OIDC_AUTH_SERVER_URL: "http://keycloak:8080/realms/contacts"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_USERNAME: "contacts"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"

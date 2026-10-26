@@ -9,11 +9,35 @@ The project is organized as a Maven multi-module project:
 ```text
 Contacts-Platform/
 ├── pom.xml
+├── DockerCompose.yaml
+├── Dockerfile.api
+├── Dockerfile.reporter
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── keycloak/
+│   └── realm-export.json
+├── k8s/
+│   ├── namespace.yaml
+│   ├── mysql.yaml
+│   ├── keycloak.yaml
+│   ├── rabbitmq.yaml
+│   ├── kafka.yaml
+│   ├── contacts-api-config.yaml
+│   ├── contacts-api.yaml
+│   ├── contacts-reporter-config.yaml
+│   └── contacts-reporter.yaml
 ├── contacts-api/
 │   ├── pom.xml
 │   └── src/
 │       ├── main/
+│       │   └── event/
+│       │       ├── ContactCreatedEvent.java
+│       │       └── ContactEventPublisher.java
 │       └── test/
+│           ├── event/
+│           │   ├── ContactEventPublisherTest.java
+│           │   └── ContactEventPublisherKafkaTest.java
 │           ├── resource/
 │           │   ├── ContactResourceTest.java
 │           │   └── ContactGroupResourceTest.java
@@ -24,9 +48,14 @@ Contacts-Platform/
     ├── pom.xml
     └── src/
         ├── main/
+        │   ├── event/
+        │   │   ├── ContactCreatedEvent.java
+        │   │   └── ContactEventConsumer.java
         │   └── service/
         │       └── ContactReporterService.java
         └── test/
+            ├── event/
+            │   └── ContactEventConsumerTest.java
             ├── resource/
             │   └── ContactReporterResourceTest.java
             └── service/
@@ -34,6 +63,12 @@ Contacts-Platform/
 ```
 
 Test classes live under `src/test/java/com/contacts/`, mirroring the package of the class they test.
+
+* `Dockerfile.api` and `Dockerfile.reporter` build the container image of each application.
+* `DockerCompose.yaml` starts both applications and all their dependencies.
+* `k8s/` contains the Kubernetes manifests used on Minikube.
+* `.github/workflows/ci.yml` is the GitHub Actions pipeline.
+* `keycloak/realm-export.json` is the Keycloak realm imported by every environment.
 
 The `contacts-api` module contains the main REST API, including contact and group management, persistence, validation, and security. The `contacts-reporter` module is a second Quarkus application that calls the API and exposes reporting data.
 
@@ -56,6 +91,13 @@ The `contacts-api` module contains the main REST API, including contact and grou
 * `@QuarkusTest` with RestAssured
 * Testcontainers (through Quarkus Dev Services)
 * JaCoCo
+* RabbitMQ and Apache Kafka (Quarkus Messaging)
+* SmallRye Health
+* Micrometer with Prometheus
+* JSON logging (`quarkus-logging-json`)
+* Docker and Docker Compose
+* Kubernetes (Minikube)
+* GitHub Actions
 
 ## Architecture
 
@@ -448,6 +490,14 @@ http://localhost:8080/q/swagger-ui
 
 Swagger UI can be used to explore and test the API without needing to know the implementation details.
 
+Swagger UI is also included in the packaged application, so it is available in the containers as well:
+
+```properties
+quarkus.swagger-ui.always-include=true
+```
+
+To call secured endpoints, click **Authorize**, use the client `contacts-frontend`, leave the client secret empty, do not select any scope, and log in with a user from the `contacts` realm. Keycloak redirects back to the Swagger page that started the login, so Swagger must be opened on the same address and port that is used to reach the API.
+
 ## How to Run
 
 ### Prerequisites
@@ -511,20 +561,29 @@ Client secrets are masked (`**********`) in the export, so they are never stored
 3. Click **Regenerate** and copy the new client secret.
 4. Provide it to the reporter through the `REPORTER_CLIENT_SECRET` environment variable, as described in [Start the Reporter](#start-the-reporter).
 
-#### Create the Test Users
+#### Test Users
 
-To demonstrate role-based access and the owner rule, two users are needed in the `contacts` realm:
+The realm export includes the users, so they exist after every import:
 
 | Username | Realm roles | Can |
 |---|---|---|
-| `alice` | `user` | Read and create her own contacts |
 | `admin-user` | `user`, `admin` | Read all contacts and delete contacts |
+| `admin_user` | `user`, `admin` | Read all contacts and delete contacts |
+| `donia` | `user` | Read and create her own contacts |
+| `dina` | `user` | Read and create her own contacts |
+| `user2` | `user` | Read and create own contacts |
+| `test` | none | No access to the API (`403 Forbidden`) |
 
-If they are not present after the import, create them in the admin console:
+Users with only the `user` role demonstrate the owner rule: each of them sees only the contacts they created. The export stores only password hashes, not the passwords themselves.
+
+To add another user:
 
 1. Go to **Users → Create new user**, enter the username and click **Create**.
 2. Open the **Credentials** tab, set a password and turn **Temporary** off.
 3. Open the **Role mapping** tab, click **Assign role**, filter by realm roles and assign the roles from the table above.
+4. Export the realm again with users, as described in [Exporting the Realm with Users](#exporting-the-realm-with-users), so the new user is part of `realm-export.json`.
+
+The admin console's **Partial export** does not include users, so it cannot be used for this.
 
 These are local test users only. Their passwords must not be real passwords used anywhere else.
 
@@ -549,16 +608,18 @@ docker rm -f keycloak
 
 ### Start the API
 
-From the project root:
+The Maven wrapper is inside each module, so run it from the module folder:
 
 ```bash
-./mvnw -pl contacts-api quarkus:dev
+cd contacts-api
+./mvnw quarkus:dev
 ```
 
 On Windows PowerShell:
 
 ```powershell
-.\mvnw.cmd -pl contacts-api quarkus:dev
+cd contacts-api
+.\mvnw.cmd quarkus:dev
 ```
 
 The API runs at:
@@ -581,7 +642,8 @@ On Windows PowerShell:
 
 ```powershell
 $env:REPORTER_CLIENT_SECRET = "YOUR_ACTUAL_CLIENT_SECRET"
-.\mvnw.cmd -pl contacts-reporter quarkus:dev
+cd contacts-reporter
+.\mvnw.cmd quarkus:dev
 ```
 
 The reporter runs at:
@@ -591,6 +653,100 @@ http://localhost:8082
 ```
 
 The secret must be set locally. Do not commit the actual value to the repository.
+
+### Run the Whole Stack with Docker Compose
+
+`DockerCompose.yaml` starts both applications and everything they depend on: MySQL, Keycloak, RabbitMQ and Kafka. No Dev Services are used here; the applications run with the `prod` profile and receive their configuration through environment variables.
+
+Create a `.env` file in the project root. It is ignored by Git and holds the local values:
+
+```properties
+REPORTER_CLIENT_SECRET=<contacts-reporter secret from the imported realm>
+MYSQL_PASSWORD=<local database password>
+MYSQL_ROOT_PASSWORD=<local root password>
+KEYCLOAK_ADMIN_PASSWORD=<local Keycloak admin password>
+RABBITMQ_PASSWORD=<local RabbitMQ password>
+```
+
+Start the stack from the project root:
+
+```powershell
+docker compose -f DockerCompose.yaml up -d --build
+docker compose -f DockerCompose.yaml ps
+```
+
+| Service | Address |
+|---|---|
+| `contacts-api` | `http://localhost:8080` |
+| Keycloak | `http://localhost:8081` |
+| `contacts-reporter` | `http://localhost:8082` |
+| RabbitMQ management | `http://localhost:15672` |
+| MySQL | `localhost:3307` |
+
+Kafka is only reachable inside the Compose network, as `kafka:9092`.
+
+* **Healthchecks:** MySQL, Keycloak, RabbitMQ and Kafka have healthchecks, and `contacts-api` only starts once all four are healthy.
+* **Service names:** containers reach each other by service name, for example `jdbc:mysql://mysql:3306/contacts` and `http://keycloak:8080/realms/contacts`.
+* **Token issuer:** Keycloak uses `KC_HOSTNAME=http://localhost:8081` and `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`. Tokens fetched from the host and tokens fetched by the reporter inside the network therefore carry the same issuer, `http://localhost:8081/realms/contacts`, which is the issuer `contacts-api` expects.
+* **Reporter configuration:** the reporter receives `QUARKUS_OIDC_CLIENT_AUTH_SERVER_URL` and `QUARKUS_REST_CLIENT_CONTACTS_API_URL`, which override the `localhost` values in its `application.properties`.
+* **Volumes:** `mysql_data`, `rabbitmq_data` and `kafka_data` keep data across restarts. `docker compose -f DockerCompose.yaml down -v` deletes them.
+
+Two things to know when changing values in `.env`:
+
+* Containers read `.env` only when they are created. After changing a value, recreate the container, for example `docker compose -f DockerCompose.yaml up -d --force-recreate contacts-reporter`. A variable set in the PowerShell session with `$env:` takes precedence over `.env`.
+* MySQL applies `MYSQL_PASSWORD` and `MYSQL_ROOT_PASSWORD` only when its volume is created for the first time. If these values change later, the volume must be recreated, otherwise `contacts-api` fails with `Access denied for user 'contacts'`.
+
+### Run on Minikube
+
+The manifests in `k8s/` deploy the same applications and dependencies to the `contacts-platform` namespace.
+
+Minikube has its own image store, so the images are built on the host and then loaded into Minikube. Every build gets a new tag, because Minikube keeps an existing image with the same tag and a Deployment with an unchanged tag starts no new Pod:
+
+```powershell
+docker build -t contacts-api:t4 -f Dockerfile.api .
+docker build -t contacts-reporter:t3 -f Dockerfile.reporter .
+minikube image load contacts-api:t4
+minikube image load contacts-reporter:t3
+```
+
+The image tags in `k8s/contacts-api.yaml` and `k8s/contacts-reporter.yaml` must match the loaded tags.
+
+Passwords and client secrets are not stored in the manifests. They are created as Kubernetes Secrets before the manifests are applied:
+
+```powershell
+kubectl apply -f k8s/namespace.yaml
+kubectl create secret generic contacts-secrets -n contacts-platform `
+  --from-literal=MYSQL_PASSWORD=<value> --from-literal=MYSQL_ROOT_PASSWORD=<value>
+kubectl create secret generic rabbitmq-secret -n contacts-platform `
+  --from-literal=RABBITMQ_PASSWORD=<value>
+kubectl create secret generic keycloak-admin-secret -n contacts-platform `
+  --from-literal=KEYCLOAK_ADMIN_PASSWORD=<value>
+kubectl create secret generic reporter-client-secret -n contacts-platform `
+  --from-literal=REPORTER_CLIENT_SECRET=<contacts-reporter secret from the imported realm>
+kubectl create secret generic keycloak-realm -n contacts-platform `
+  --from-file=realm-export.json=keycloak/realm-export.json
+```
+
+Then apply the manifests and wait for the Pods:
+
+```powershell
+kubectl apply -f k8s/mysql.yaml -f k8s/keycloak.yaml -f k8s/rabbitmq.yaml -f k8s/kafka.yaml
+kubectl apply -f k8s/contacts-api-config.yaml -f k8s/contacts-api.yaml
+kubectl apply -f k8s/contacts-reporter-config.yaml -f k8s/contacts-reporter.yaml
+kubectl -n contacts-platform get pods
+```
+
+Pods are not reachable from the host directly. Each service is opened with a port forward, which keeps running in its own terminal:
+
+```powershell
+kubectl -n contacts-platform port-forward svc/keycloak 8081:8080
+kubectl -n contacts-platform port-forward svc/contacts-api 18080:8080
+kubectl -n contacts-platform port-forward svc/contacts-reporter 18082:8082
+```
+
+A port forward is connected to one Pod. When that Pod is replaced, for example by `kubectl rollout restart` or a new image, the port forward stops and has to be started again.
+
+Docker Compose and Minikube both use `localhost:8081` for Keycloak, because the Swagger login URL and `KC_HOSTNAME` are set to that address. Only one of the two environments should run at a time.
 
 ## Testing the API
 
@@ -810,6 +966,36 @@ quarkus.hibernate-orm.schema-management.strategy=none
 ```
 
 Therefore, the database schema is managed through Flyway migrations.
+
+Values that differ between environments come from environment variables, with a local default where one makes sense:
+
+```properties
+%prod.quarkus.datasource.jdbc.url=${DB_URL}
+%prod.quarkus.datasource.username=${DB_USERNAME}
+%prod.quarkus.datasource.password=${DB_PASSWORD}
+quarkus.oidc.auth-server-url=${OIDC_AUTH_SERVER_URL:http://localhost:8081/realms/contacts}
+```
+
+In development and tests, Dev Services provide the database, so no connection is configured. In Docker Compose and Kubernetes, the variables are set by the compose file and by the ConfigMaps and Secrets. RabbitMQ and Kafka are configured the same way through `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD` and `KAFKA_BOOTSTRAP_SERVERS`, which Quarkus maps onto its own properties.
+
+### Logging, Health and Metrics
+
+In the `prod` profile, both applications write their logs as JSON, one object per line:
+
+```properties
+%prod.quarkus.log.console.json.enabled=true
+```
+
+Each line contains fields such as `timestamp`, `level`, `loggerName` and `message`, so logs can be searched and filtered by tools instead of being read as plain text. The event logs contain the `eventId` and `correlationId`, so one user action can be followed across both applications by searching for its `correlationId`.
+
+Both applications use SmallRye Health:
+
+| Endpoint | Purpose |
+|---|---|
+| `/q/health/live` | Liveness: the application is running |
+| `/q/health/ready` | Readiness: the application can serve requests, including the connections it depends on (the database for `contacts-api`, RabbitMQ and Kafka for both) |
+
+`contacts-api` also exposes application metrics in Prometheus format at `/q/metrics`.
 
 ## Design Decisions
 
@@ -1160,13 +1346,14 @@ The expiry check verifies that expired access tokens are not accepted. The repor
 
 ## Running the Reporter
 
-Start Keycloak and `contacts-api` first. Then configure the reporter secret and start the reporter module from the project root.
+Start Keycloak and `contacts-api` first. Then configure the reporter secret and start the reporter from its module folder.
 
 On Windows PowerShell:
 
 ```powershell
 $env:REPORTER_CLIENT_SECRET = "YOUR_ACTUAL_CLIENT_SECRET"
-.\mvnw.cmd -pl contacts-reporter quarkus:dev
+cd contacts-reporter
+.\mvnw.cmd quarkus:dev
 ```
 
 The current local development setup uses these ports:
@@ -1462,9 +1649,9 @@ These tests provide integration-level evidence for Kafka publishing and ordering
 - **Shared consumer deduplication logic:** both brokers use the same event-processing method, avoiding separate idempotency rules.
 - **In-memory deduplication for the demonstration:** keeps the implementation simple but does not provide durable or distributed deduplication.
 
-# CI/CD Documentation
+## CI/CD Pipeline
 
-## 1. GitHub Actions CI Pipeline
+### GitHub Actions CI Pipeline
 
 Created `.github/workflows/ci.yml` to automate the build, test, and Docker image verification process.
 
@@ -1480,13 +1667,13 @@ The pipeline:
 5. Builds the `contacts-api` Docker image.
 6. Builds the `contacts-reporter` Docker image.
 
-## 2. Automated Testing and Coverage
+### Automated Testing and Coverage
 
 Configured JaCoCo in both Quarkus modules to enforce a minimum of **80% line coverage** for the selected service and resource packages.
 
 The coverage check runs during Maven's `verify` phase. Both modules passed their tests and coverage checks. We also tested the enforcement mechanism by temporarily setting an unattainable threshold and confirming that the build failed.
 
-## 3. Branch Protection and Merge Gate
+### Branch Protection and Merge Gate
 
 Configured branch protection for `main` to require:
 - Pull requests before merging.
@@ -1494,7 +1681,7 @@ Configured branch protection for `main` to require:
 
 Verified the merge gate by creating a temporary pull request containing an intentionally failing test. CI failed as expected. The test was removed, CI passed again, and the temporary pull request was closed without merging.
 
-## 4. Docker Image Verification
+### Docker Image Verification
 
 The CI workflow builds both application images using:
 - `Dockerfile.api`
@@ -1502,7 +1689,7 @@ The CI workflow builds both application images using:
 
 Both image builds completed successfully in GitHub Actions.
 
-## 5. Docker Compose Clean-Start Verification
+### Docker Compose Clean-Start Verification
 
 Stopped and rebuilt the Docker Compose stack using:
 
@@ -1522,7 +1709,7 @@ All six services started successfully:
 
 MySQL, Keycloak, RabbitMQ, and Kafka reported healthy status. The named data volumes were preserved by not using the `-v` option with `docker compose down`.
 
-## 6. Runtime Verification
+### Runtime Verification
 
 - Confirmed that the Contacts API started in production mode.
 - Confirmed that all three Flyway migrations were validated and the database schema was up to date.
@@ -1530,7 +1717,7 @@ MySQL, Keycloak, RabbitMQ, and Kafka reported healthy status. The named data vol
 - Opened `/q/openapi` successfully and verified that the API specification lists the expected contacts and contact-group endpoints.
 - Verified the reporter-to-API request using `/reporters/contacts/count`.
 
-## 7. Service-to-Service Authentication Troubleshooting
+### Service-to-Service Authentication Troubleshooting
 
 The reporter initially returned an HTTP 500 error because Keycloak rejected its client credentials with `unauthorized_client`.
 
@@ -1538,7 +1725,7 @@ The issue was traced to a mismatch between `REPORTER_CLIENT_SECRET` in the local
 
 Updated the local environment variable to match the Keycloak client secret and recreated the reporter container. The reporter then successfully authenticated and called the Contacts API, returning a count of `0`.
 
-## 8. Secret and Git Hygiene
+### Secret and Git Hygiene
 
 Verified that `.env` is ignored by Git using:
 
@@ -1548,8 +1735,82 @@ git check-ignore .env
 
 The command returned `.env`, confirming that the ignore rule applies. Also confirmed that `git status --short` returned no changes on the current branch.
 
-**Security note:** The ignore rule prevents normal untracked-file additions, but it does not prove that `.env` was never committed in the past. If needed, check the Git history separately.
+**Security note:** The ignore rule prevents normal untracked-file additions, but it does not prove that `.env` was never committed in the past. The history was therefore checked as well:
 
-## Final Result
+```powershell
+git log --all --oneline -- .env
+```
+
+The command returned no commits, so `.env` has never been part of the Git history.
+
+### Final Result
 
 CI pipeline, coverage enforcement, Docker image builds, branch protection, merge-gate behavior, and Docker Compose clean-start verification were completed successfully. The reporter's Keycloak client-credentials authentication was also restored and verified at runtime.
+
+
+## Kubernetes Deployment and Operations
+
+### Kubernetes Deployment
+- Deployed `contacts-api`, `contacts-reporter`, MySQL, Keycloak, RabbitMQ, and Kafka to Minikube in the `contacts-platform` namespace.
+- Used Kubernetes Deployments and Services to manage application replicas and provide stable networking.
+- Configured application settings through ConfigMaps and sensitive values through Secrets.
+- Configured the API with **2 replicas** and readiness/liveness probes.
+- The readiness probe uses `/q/health/ready`, so a Pod receives traffic only when its database, RabbitMQ and Kafka connections are up. The liveness probe uses `/q/health/live`, so Kubernetes restarts a Pod that no longer responds.
+- The reporter runs with 1 replica.
+- MySQL stores its data on a PersistentVolumeClaim, so the database survives Pod restarts.
+
+### Keycloak on Minikube
+- Keycloak imports `realm-export.json` from the `keycloak-realm` Secret on startup.
+- `KC_HOSTNAME=http://localhost:8081` and `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` give every token the issuer `http://localhost:8081/realms/contacts`, while the applications still reach Keycloak internally as `keycloak:8080`.
+- The Deployment uses the `Recreate` strategy. With the default rolling update, a second Keycloak Pod starts before the old one stops, which exhausted Minikube's memory.
+- Keycloak has no persistent storage. After every restart it imports the realm file again, so users and client secrets come only from `realm-export.json`.
+- The realm file is larger than the 256 KB that `kubectl apply` can store in its annotation, so the Secret is updated with `kubectl replace`:
+
+```powershell
+kubectl -n contacts-platform create secret generic keycloak-realm `
+  --from-file=realm-export.json=keycloak/realm-export.json --dry-run=client -o yaml | kubectl replace -f -
+kubectl -n contacts-platform rollout restart deployment/keycloak
+```
+
+### Exporting the Realm with Users
+The admin console's **Partial export** leaves out users. The realm is therefore exported with `kc.sh` inside the Keycloak Pod. Because the running Keycloak locks its development database, the database file is copied first and the export reads the copy:
+
+```powershell
+kubectl -n contacts-platform exec deploy/keycloak -- sh -c "mkdir -p /tmp/kcexport && cp /opt/keycloak/data/h2/keycloakdb.mv.db /tmp/kcexport/"
+kubectl -n contacts-platform exec deploy/keycloak -- /opt/keycloak/bin/kc.sh export --db dev-file `
+  --db-url "jdbc:h2:file:/tmp/kcexport/keycloakdb;NON_KEYWORDS=VALUE" --realm contacts --users same_file --file /tmp/realm-export.json
+kubectl -n contacts-platform exec deploy/keycloak -- cat /tmp/realm-export.json > keycloak/realm-export.json
+```
+
+The Keycloak image has no `tar`, so `kubectl cp` does not work and the file is copied out with `cat`. This export writes client secrets in plain text, so they must be masked before the file is committed.
+
+### Monitoring and Troubleshooting
+- Used `kubectl apply`, `get`, `describe`, `logs`, and `scale` to manage and inspect resources.
+- Verified API and reporter health endpoints and the API metrics endpoint.
+- Simulated a Kafka connection failure by using an invalid bootstrap address, identified the problem through logs, restored the configuration, and restarted the API.
+
+### Diagnosed Fault: Kafka CrashLoopBackOff
+**Kafka CrashLoopBackOff on Minikube:** `KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093` pointed the single-node broker at its own controller through the `kafka` Service, which only routes to Ready Pods. Kafka was not Ready until it registered with the controller, so registration timed out and Kafka exited (`unable to register with the controller quorum`, found with `kubectl logs --previous` and `kubectl describe pod`).
+
+**Fix and side effect:** setting the voters to `1@localhost:9093` lets Kafka reach its controller in the same process. While Kafka was down, the readiness check of `contacts-api` reported the `contact-created-kafka-out` channel as DOWN (Pod `0/1`), and the Pod recovered on its own once Kafka became Ready.
+
+### Event Tracing
+- Verified that the API publishes `ContactCreatedEvent` to RabbitMQ and Kafka.
+- Confirmed that the reporter processes the RabbitMQ event and ignores the duplicate Kafka event using the shared `eventId`.
+- Traced the event across both applications using `eventId` and `correlationId`:
+
+```powershell
+kubectl -n contacts-platform logs deploy/contacts-api | Select-String <correlationId>
+kubectl -n contacts-platform logs deploy/contacts-reporter | Select-String <correlationId>
+```
+
+- `kubectl logs` only shows the current Pod. When a Deployment replaces a Pod, the old Pod's logs are gone. A Kafka offset that is committed and an empty RabbitMQ queue still show that an event was consumed, even when the Pod that processed it no longer exists.
+
+### Design Decisions
+- **Deployments** manage replicas and replace failed Pods.
+- **Services** provide stable networking between components.
+- **ConfigMaps** store non-sensitive configuration; **Secrets** store sensitive values.
+- **Health probes** monitor application health, while structured logs and metrics support troubleshooting.
+
+### Verification
+The applications ran successfully on Minikube, API scaling was verified, health checks and metrics responded successfully, and a broken Kafka configuration was diagnosed and recovered.
