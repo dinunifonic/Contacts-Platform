@@ -1681,6 +1681,10 @@ Configured branch protection for `main` to require:
 
 Verified the merge gate by creating a temporary pull request containing an intentionally failing test. CI failed as expected. The test was removed, CI passed again, and the temporary pull request was closed without merging.
 
+Pipeline runs:
+- Green run: [Build and test passed](https://github.com/dinunifonic/Contacts-Platform/actions/runs/39520712191)
+- Red run blocking a merge: [Build and test failed](https://github.com/dinunifonic/Contacts-Platform/actions/runs/39493195268)
+
 ### Docker Image Verification
 
 The CI workflow builds both application images using:
